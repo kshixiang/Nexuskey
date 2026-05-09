@@ -1,11 +1,12 @@
 {
-  "name": "cc-switch",
+  "name": "nexuskey",
   "version": "3.14.1",
   "description": "All-in-One Assistant for Claude Code, Codex & Gemini CLI",
   "type": "module",
   "scripts": {
-    "dev": "pnpm tauri dev",
+    "dev": "node scripts/free-dev-port.mjs && pnpm tauri dev",
     "build": "pnpm tauri build",
+    "bundle:prep-wix": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-wix-tools.ps1",
     "tauri": "tauri",
     "dev:renderer": "vite",
     "build:renderer": "vite build",

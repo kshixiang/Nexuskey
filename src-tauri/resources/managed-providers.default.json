@@ -1,0 +1,195 @@
+{
+  "brandName": "NexusKey",
+  "brandUrl": "https://nexuskey.ai",
+  "claude": {
+    "id": "nexuskey-claude",
+    "name": "NexusKey Claude",
+    "websiteUrl": "https://nexuskey.ai",
+    "icon": "claude",
+    "iconColor": "#D4915D",
+    "category": "third_party",
+    "apiFormat": "anthropic",
+    "modelOptions": [
+      {
+        "id": "claude-haiku-4-5",
+        "name": "Claude Haiku 4.5"
+      },
+      {
+        "id": "claude-sonnet-4-6",
+        "name": "Claude Sonnet 4.6"
+      },
+      {
+        "id": "claude-opus-4-7",
+        "name": "Claude Opus 4.7"
+      }
+    ],
+    "setCurrent": true,
+    "settingsConfig": {
+      "env": {
+        "ANTHROPIC_BASE_URL": "https://api.nexuskey.ai/claude",
+        "ANTHROPIC_AUTH_TOKEN": "YOUR_NEXUSKEY_API_KEY",
+        "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-7"
+      }
+    }
+  },
+  "codex": {
+    "id": "nexuskey-codex",
+    "name": "NexusKey Codex",
+    "websiteUrl": "https://nexuskey.ai",
+    "icon": "openai",
+    "iconColor": "#00A67E",
+    "category": "third_party",
+    "modelOptions": [
+      {
+        "id": "gpt-5.4",
+        "name": "GPT-5.4"
+      },
+      {
+        "id": "gpt-5.4-mini",
+        "name": "GPT-5.4 Mini"
+      }
+    ],
+    "setCurrent": true,
+    "settingsConfig": {
+      "auth": {
+        "OPENAI_API_KEY": "YOUR_NEXUSKEY_API_KEY"
+      },
+      "config": "model_provider = \"nexuskey\"\nmodel = \"gpt-5.4\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.nexuskey]\nname = \"nexuskey\"\nbase_url = \"https://api.nexuskey.ai/codex/v1\"\nwire_api = \"responses\"\nrequires_openai_auth = true"
+    }
+  },
+  "gemini": {
+    "id": "nexuskey-gemini",
+    "name": "NexusKey Gemini",
+    "websiteUrl": "https://nexuskey.ai",
+    "icon": "gemini",
+    "iconColor": "#4285F4",
+    "category": "third_party",
+    "modelOptions": [
+      {
+        "id": "gemini-3-pro",
+        "name": "Gemini 3 Pro"
+      },
+      {
+        "id": "gemini-3-flash",
+        "name": "Gemini 3 Flash"
+      }
+    ],
+    "setCurrent": true,
+    "settingsConfig": {
+      "env": {
+        "GOOGLE_GEMINI_BASE_URL": "https://api.nexuskey.ai/gemini",
+        "GEMINI_API_KEY": "YOUR_NEXUSKEY_API_KEY",
+        "GEMINI_MODEL": "gemini-3-pro"
+      },
+      "config": {}
+    }
+  },
+  "opencode": {
+    "id": "nexuskey-opencode",
+    "name": "NexusKey OpenCode",
+    "websiteUrl": "https://nexuskey.ai",
+    "icon": "opencode",
+    "iconColor": "#6366F1",
+    "category": "third_party",
+    "liveConfigManaged": true,
+    "settingsConfig": {
+      "name": "nexuskey",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "https://api.nexuskey.ai/opencode/v1",
+        "apiKey": "YOUR_NEXUSKEY_API_KEY"
+      },
+      "models": {
+        "gpt-5.4": {
+          "name": "GPT-5.4",
+          "limit": {
+            "context": 400000,
+            "output": 128000
+          }
+        },
+        "gpt-5.4-mini": {
+          "name": "GPT-5.4 Mini",
+          "limit": {
+            "context": 200000,
+            "output": 64000
+          }
+        }
+      }
+    }
+  },
+  "openclaw": {
+    "id": "nexuskey-openclaw",
+    "name": "NexusKey OpenClaw",
+    "websiteUrl": "https://nexuskey.ai",
+    "icon": "openai",
+    "iconColor": "#00A67E",
+    "category": "third_party",
+    "liveConfigManaged": true,
+    "settingsConfig": {
+      "baseUrl": "https://api.nexuskey.ai/openclaw",
+      "apiKey": "YOUR_NEXUSKEY_API_KEY",
+      "api": "openai-responses",
+      "models": [
+        {
+          "id": "gpt-5.4",
+          "name": "GPT-5.4",
+          "contextWindow": 400000,
+          "maxTokens": 128000
+        },
+        {
+          "id": "gpt-5.4-mini",
+          "name": "GPT-5.4 Mini",
+          "contextWindow": 200000,
+          "maxTokens": 64000
+        }
+      ]
+    },
+    "openclawDefaultModel": {
+      "primary": "nexuskey-openclaw/gpt-5.4",
+      "fallbacks": []
+    },
+    "openclawModelCatalog": {
+      "nexuskey-openclaw/gpt-5.4": {
+        "alias": "GPT-5.4"
+      },
+      "nexuskey-openclaw/gpt-5.4-mini": {
+        "alias": "GPT-5.4 Mini"
+      }
+    }
+  },
+  "hermes": {
+    "id": "nexuskey-hermes",
+    "name": "NexusKey Hermes",
+    "websiteUrl": "https://nexuskey.ai",
+    "icon": "hermes",
+    "iconColor": "#8B5CF6",
+    "category": "third_party",
+    "liveConfigManaged": true,
+    "settingsConfig": {
+      "name": "nexuskey",
+      "base_url": "https://api.nexuskey.ai/hermes/v1",
+      "api_key": "YOUR_NEXUSKEY_API_KEY",
+      "api_mode": "chat_completions",
+      "models": [
+        {
+          "id": "openai/gpt-5.4",
+          "name": "GPT-5.4",
+          "context_length": 400000
+        },
+        {
+          "id": "openai/gpt-5.4-mini",
+          "name": "GPT-5.4 Mini",
+          "context_length": 200000
+        }
+      ]
+    },
+    "hermesModel": {
+      "default": "openai/gpt-5.4",
+      "provider": "nexuskey-hermes",
+      "base_url": "https://api.nexuskey.ai/hermes/v1"
+    }
+  }
+}

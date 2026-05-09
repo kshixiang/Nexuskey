@@ -47,7 +47,7 @@ pub struct McpConfigResponse {
     pub servers: HashMap<String, serde_json::Value>,
 }
 
-/// 获取 MCP 配置（来自 ~/.cc-switch/config.json）
+/// 获取 MCP 配置（来自应用配置目录下 `config.json`，默认 `~/.nexuskey/config.json`）
 use std::str::FromStr;
 
 #[tauri::command]

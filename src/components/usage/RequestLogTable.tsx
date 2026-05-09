@@ -27,6 +27,7 @@ import {
   getLocaleFromLanguage,
   parseFiniteNumber,
 } from "./format";
+import { cn } from "@/lib/utils";
 
 interface RequestLogTableProps {
   range: UsageRangeSelection;
@@ -34,6 +35,8 @@ interface RequestLogTableProps {
   appType?: string;
   refreshIntervalMs: number;
   onRangeChange?: (range: UsageRangeSelection) => void;
+  /** 嵌入平台页时纵向铺满，表格区域内部滚动 */
+  expandToFill?: boolean;
 }
 
 export function RequestLogTable({
@@ -42,6 +45,7 @@ export function RequestLogTable({
   appType: dashboardAppType,
   refreshIntervalMs,
   onRangeChange,
+  expandToFill,
 }: RequestLogTableProps) {
   const { t, i18n } = useTranslation();
 
@@ -118,8 +122,19 @@ export function RequestLogTable({
   const locale = getLocaleFromLanguage(language);
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border bg-card/50 p-2 backdrop-blur-sm">
+    <div
+      className={cn(
+        expandToFill
+          ? "flex min-h-0 flex-1 flex-col gap-4"
+          : "space-y-4",
+      )}
+    >
+      <div
+        className={cn(
+          "rounded-lg border bg-card/50 p-2 backdrop-blur-sm",
+          expandToFill && "shrink-0",
+        )}
+      >
         <div className="flex flex-wrap items-center gap-1.5">
           {/* App type */}
           <Select
@@ -239,10 +254,27 @@ export function RequestLogTable({
       </div>
 
       {isLoading ? (
-        <div className="h-[400px] animate-pulse rounded bg-gray-100" />
+        <div
+          className={cn(
+            "animate-pulse rounded bg-gray-100",
+            expandToFill ? "min-h-[200px] flex-1" : "h-[400px]",
+          )}
+        />
       ) : (
         <>
-          <div className="rounded-lg border border-border/50 bg-card/40 backdrop-blur-sm overflow-x-auto">
+          <div
+            className={cn(
+              "rounded-lg border border-border/50 bg-card/40 backdrop-blur-sm",
+              expandToFill
+                ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+                : "overflow-x-auto",
+            )}
+          >
+            <div
+              className={cn(
+                expandToFill && "min-h-0 flex-1 overflow-auto",
+              )}
+            >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -384,9 +416,15 @@ export function RequestLogTable({
                 )}
               </TableBody>
             </Table>
+            </div>
           </div>
 
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <div
+            className={cn(
+              "flex items-center justify-between text-sm text-muted-foreground",
+              expandToFill && "shrink-0",
+            )}
+          >
             <span>{t("usage.totalRecords", { total })}</span>
             <div className="flex items-center gap-1">
               <Button

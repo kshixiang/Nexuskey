@@ -17,6 +17,13 @@ const TEMPLATE_TYPE_TOKEN_PLAN: &str = "token_plan";
 const TEMPLATE_TYPE_BALANCE: &str = "balance";
 const COPILOT_UNIT_PREMIUM: &str = "requests";
 
+fn ensure_provider_management_allowed() -> Result<(), String> {
+    if crate::managed_mode::MANAGED_MODE {
+        return Err("Managed relay mode does not allow provider modifications".to_string());
+    }
+    Ok(())
+}
+
 /// 获取所有供应商
 #[tauri::command]
 pub fn get_providers(
@@ -40,6 +47,7 @@ pub fn add_provider(
     provider: Provider,
     #[allow(non_snake_case)] addToLive: Option<bool>,
 ) -> Result<bool, String> {
+    ensure_provider_management_allowed()?;
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
     ProviderService::add(state.inner(), app_type, provider, addToLive.unwrap_or(true))
         .map_err(|e| e.to_string())
@@ -52,6 +60,7 @@ pub fn update_provider(
     provider: Provider,
     #[allow(non_snake_case)] originalId: Option<String>,
 ) -> Result<bool, String> {
+    ensure_provider_management_allowed()?;
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
     ProviderService::update(state.inner(), app_type, originalId.as_deref(), provider)
         .map_err(|e| e.to_string())
@@ -63,6 +72,7 @@ pub fn delete_provider(
     app: String,
     id: String,
 ) -> Result<bool, String> {
+    ensure_provider_management_allowed()?;
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
     ProviderService::delete(state.inner(), app_type, &id)
         .map(|_| true)
@@ -75,6 +85,7 @@ pub fn remove_provider_from_live_config(
     app: String,
     id: String,
 ) -> Result<bool, String> {
+    ensure_provider_management_allowed()?;
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
     ProviderService::remove_from_live_config(state.inner(), app_type, &id)
         .map(|_| true)
@@ -106,6 +117,20 @@ pub fn switch_provider(
 ) -> Result<SwitchResult, String> {
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
     switch_provider_internal(&state, app_type, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn clear_current_provider(
+    state: State<'_, AppState>,
+    app: String,
+) -> Result<bool, String> {
+    let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
+    state
+        .db
+        .clear_current_provider(app_type.as_str())
+        .map_err(|e| e.to_string())?;
+    crate::settings::set_current_provider(&app_type, None).map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 fn import_default_config_internal(state: &AppState, app_type: AppType) -> Result<bool, AppError> {
@@ -146,6 +171,7 @@ pub fn import_default_config_test_hook(
 
 #[tauri::command]
 pub fn import_default_config(state: State<'_, AppState>, app: String) -> Result<bool, String> {
+    ensure_provider_management_allowed()?;
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
     import_default_config_internal(&state, app_type).map_err(Into::into)
 }
@@ -436,6 +462,7 @@ pub fn update_providers_sort_order(
     app: String,
     updates: Vec<ProviderSortUpdate>,
 ) -> Result<bool, String> {
+    ensure_provider_management_allowed()?;
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
     ProviderService::update_sort_order(state.inner(), app_type, updates).map_err(|e| e.to_string())
 }
@@ -481,6 +508,7 @@ pub fn upsert_universal_provider(
     state: State<'_, AppState>,
     provider: UniversalProvider,
 ) -> Result<bool, String> {
+    ensure_provider_management_allowed()?;
     let id = provider.id.clone();
     let result =
         ProviderService::upsert_universal(state.inner(), provider).map_err(|e| e.to_string())?;
@@ -496,6 +524,7 @@ pub fn delete_universal_provider(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<bool, String> {
+    ensure_provider_management_allowed()?;
     let result =
         ProviderService::delete_universal(state.inner(), &id).map_err(|e| e.to_string())?;
 
@@ -510,6 +539,7 @@ pub fn sync_universal_provider(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<bool, String> {
+    ensure_provider_management_allowed()?;
     let result =
         ProviderService::sync_universal_to_apps(state.inner(), &id).map_err(|e| e.to_string())?;
 
@@ -520,6 +550,7 @@ pub fn sync_universal_provider(
 
 #[tauri::command]
 pub fn import_opencode_providers_from_live(state: State<'_, AppState>) -> Result<usize, String> {
+    ensure_provider_management_allowed()?;
     crate::services::provider::import_opencode_providers_from_live(state.inner())
         .map_err(|e| e.to_string())
 }

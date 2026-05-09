@@ -42,7 +42,7 @@ impl Database {
                 Ok(GlobalProxyConfig {
                     proxy_enabled: false,
                     listen_address: "127.0.0.1".to_string(),
-                    listen_port: 15721,
+                    listen_port: crate::app_identity::APP_DEFAULT_PROXY_PORT,
                     enable_logging: true,
                 })
             }

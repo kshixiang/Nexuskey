@@ -7,7 +7,6 @@ interface AppSwitcherProps {
   activeApp: AppId;
   onSwitch: (app: AppId) => void;
   visibleApps?: VisibleApps;
-  compact?: boolean;
 }
 
 const ALL_APPS: AppId[] = [
@@ -18,13 +17,12 @@ const ALL_APPS: AppId[] = [
   "openclaw",
   "hermes",
 ];
-const STORAGE_KEY = "cc-switch-last-app";
+const STORAGE_KEY = "nexuskey-last-app";
 
 export function AppSwitcher({
   activeApp,
   onSwitch,
   visibleApps,
-  compact,
 }: AppSwitcherProps) {
   const handleSwitch = (app: AppId) => {
     if (app === activeApp) return;
@@ -56,36 +54,33 @@ export function AppSwitcher({
   });
 
   return (
-    <div className="inline-flex bg-muted rounded-xl p-1 gap-1">
-      {appsToShow.map((app) => (
-        <button
-          key={app}
-          type="button"
-          onClick={() => handleSwitch(app)}
-          className={cn(
-            "group inline-flex items-center px-3 h-8 rounded-md text-sm font-medium transition-all duration-200",
-            activeApp === app
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground hover:bg-background/50",
-          )}
-        >
-          <ProviderIcon
-            icon={appIconName[app]}
-            name={appDisplayName[app]}
-            size={iconSize}
-          />
-          <span
+    <div className="relative flex h-full w-[76px] shrink-0 flex-col items-center gap-2 border-r border-border/70 bg-card px-2.5 py-5 sm:w-[84px] sm:gap-2.5 sm:px-3 sm:py-6">
+      <div className="absolute inset-y-0 right-0 w-px bg-border/70" />
+      {appsToShow.map((app) => {
+        const isActive = activeApp === app;
+        return (
+          <button
+            key={app}
+            type="button"
+            onClick={() => handleSwitch(app)}
+            aria-label={appDisplayName[app]}
             className={cn(
-              "transition-all duration-200 whitespace-nowrap overflow-hidden",
-              compact
-                ? "max-w-0 opacity-0 ml-0"
-                : "max-w-[80px] opacity-100 ml-2",
+              "relative flex h-12 w-12 items-center justify-center rounded-2xl border outline-none transition-all duration-200 ease-out",
+              "focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+              "active:scale-[0.94]",
+              isActive
+                ? "border-transparent bg-gradient-to-br from-emerald-400 via-primary to-emerald-700 text-primary-foreground shadow-[0_14px_32px_hsl(142_71%_45%/0.28)] hover:shadow-[0_16px_36px_hsl(142_71%_45%/0.36)] hover:brightness-[1.03]"
+                : "border-border/60 bg-muted/30 text-muted-foreground hover:border-border/80 hover:bg-muted/45 hover:text-foreground hover:shadow-sm dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-white/55 dark:hover:bg-white/[0.06] dark:hover:text-white",
             )}
           >
-            {appDisplayName[app]}
-          </span>
-        </button>
-      ))}
+            <ProviderIcon
+              icon={appIconName[app]}
+              name={appDisplayName[app]}
+              size={iconSize}
+            />
+          </button>
+        );
+      })}
     </div>
   );
 }

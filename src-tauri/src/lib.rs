@@ -1,4 +1,5 @@
 mod app_config;
+mod app_identity;
 mod app_store;
 mod auto_launch;
 mod claude_mcp;
@@ -14,6 +15,7 @@ mod gemini_mcp;
 pub mod hermes_config;
 mod init_status;
 mod lightweight;
+mod managed_mode;
 #[cfg(target_os = "linux")]
 mod linux_fix;
 mod mcp;
@@ -97,7 +99,7 @@ fn redact_url_for_log(url_str: &str) -> String {
     }
 }
 
-/// 统一处理 ccswitch:// 深链接 URL
+/// 统一处理 NexusKey / legacy deep-link URL
 ///
 /// - 解析 URL
 /// - 向前端发射 `deeplink-import` / `deeplink-error` 事件
@@ -108,7 +110,7 @@ fn handle_deeplink_url(
     focus_main_window: bool,
     source: &str,
 ) -> bool {
-    if !url_str.starts_with("ccswitch://") {
+    if !crate::app_identity::is_supported_deeplink_url(url_str) {
         return false;
     }
 
@@ -199,8 +201,14 @@ fn macos_tray_icon() -> Option<Image<'static>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 设置 panic hook，在应用崩溃时记录日志到 <app_config_dir>/crash.log（默认 ~/.cc-switch/crash.log）
+    // 设置 panic hook，在应用崩溃时记录日志到 <app_config_dir>/crash.log（默认 ~/.nexuskey/crash.log）
     panic_hook::setup_panic_hook();
+
+    if crate::managed_mode::MANAGED_MODE {
+        if let Err(e) = crate::managed_mode::ensure_managed_config_file() {
+            log::warn!("Failed to create managed providers JSON: {e}");
+        }
+    }
 
     let mut builder = tauri::Builder::default();
 
@@ -297,7 +305,7 @@ pub fn run() {
                     log::warn!("初始化 Updater 插件失败，已跳过：{e}");
                 }
             }
-            // 初始化日志（单文件输出到 <app_config_dir>/logs/cc-switch.log）
+            // 初始化日志（单文件输出到 <app_config_dir>/logs/nexuskey.log）
             {
                 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
@@ -309,7 +317,8 @@ pub fn run() {
                 }
 
                 // 启动时删除旧日志文件，实现单文件覆盖效果
-                let log_file_path = log_dir.join("cc-switch.log");
+                let log_file_path =
+                    log_dir.join(format!("{}.log", crate::app_identity::APP_LOG_FILE_STEM));
                 let _ = std::fs::remove_file(&log_file_path);
 
                 app.handle().plugin(
@@ -320,7 +329,7 @@ pub fn run() {
                             Target::new(TargetKind::Stdout),
                             Target::new(TargetKind::Folder {
                                 path: log_dir,
-                                file_name: Some("cc-switch".into()),
+                                file_name: Some(crate::app_identity::APP_LOG_FILE_STEM.into()),
                             }),
                         ])
                         // 单文件模式：启动时删除旧文件，达到大小时轮转
@@ -336,7 +345,7 @@ pub fn run() {
 
             // 初始化数据库
             let app_config_dir = crate::config::get_app_config_dir();
-            let db_path = app_config_dir.join("cc-switch.db");
+            let db_path = app_config_dir.join(crate::app_identity::APP_DB_FILE_NAME);
             let json_path = app_config_dir.join("config.json");
 
             // 检查是否需要从 config.json 迁移到 SQLite
@@ -483,7 +492,7 @@ pub fn run() {
             // 落成 "default" provider 设为 current，再追加官方预设（is_current=false）。
             // 这样用户切到官方预设时，回填机制会保护原 live 配置不丢失。
             //
-            // 捕获首次运行快照：所有全新装用户都会看到欢迎弹窗介绍 CC Switch 的工作方式。
+            // 捕获首次运行快照：所有全新装用户都会看到欢迎弹窗介绍 NexusKey 的工作方式。
             // 读失败时默认不弹，宁可漏弹也不要因为故障打扰用户。
             let first_run_already_confirmed = crate::settings::get_settings()
                 .first_run_notice_confirmed
@@ -491,34 +500,46 @@ pub fn run() {
             let fresh_install_at_startup =
                 app_state.db.is_providers_empty().unwrap_or(false);
 
-            for app_type in
-                crate::app_config::AppType::all().filter(|t| !t.is_additive_mode())
-            {
-                match crate::services::provider::import_default_config(
-                    &app_state,
-                    app_type.clone(),
-                ) {
-                    Ok(true) => log::info!(
-                        "✓ Imported live config for {} as default provider",
-                        app_type.as_str()
-                    ),
-                    Ok(false) => log::debug!(
-                        "○ {} already has providers; live import skipped",
-                        app_type.as_str()
-                    ),
-                    Err(e) => log::debug!(
-                        "○ No live config to import for {}: {e}",
-                        app_type.as_str()
-                    ),
+            if !crate::managed_mode::MANAGED_MODE {
+                for app_type in
+                    crate::app_config::AppType::all().filter(|t| !t.is_additive_mode())
+                {
+                    match crate::services::provider::import_default_config(
+                        &app_state,
+                        app_type.clone(),
+                    ) {
+                        Ok(true) => log::info!(
+                            "✓ Imported live config for {} as default provider",
+                            app_type.as_str()
+                        ),
+                        Ok(false) => log::debug!(
+                            "○ {} already has providers; live import skipped",
+                            app_type.as_str()
+                        ),
+                        Err(e) => log::debug!(
+                            "○ No live config to import for {}: {e}",
+                            app_type.as_str()
+                        ),
+                    }
                 }
             }
 
             match app_state.db.init_default_official_providers() {
                 Ok(count) if count > 0 => {
-                    log::info!("✓ Seeded {count} official provider(s)");
+                    if crate::managed_mode::MANAGED_MODE {
+                        log::info!("✓ Seeded {count} managed provider(s)");
+                    } else {
+                        log::info!("✓ Seeded {count} official provider(s)");
+                    }
                 }
                 Ok(_) => {}
-                Err(e) => log::warn!("✗ Failed to seed official providers: {e}"),
+                Err(e) => {
+                    if crate::managed_mode::MANAGED_MODE {
+                        log::warn!("✗ Failed to seed managed providers: {e}");
+                    } else {
+                        log::warn!("✗ Failed to seed official providers: {e}");
+                    }
+                }
             }
 
             // 老用户 / 已确认的路径由 `fresh_install_at_startup` 自行拦截，这里不做写入。
@@ -536,26 +557,32 @@ pub fn run() {
             //
             // 底层 read_*_config 在文件不存在时返回默认空配置，因此新装且无
             // live 文件的用户走 Ok(0) 路径，不会产生错误日志噪音。
-            match crate::services::provider::import_opencode_providers_from_live(&app_state) {
-                Ok(count) if count > 0 => {
-                    log::info!("✓ Imported {count} OpenCode provider(s) from live config");
+            if crate::managed_mode::MANAGED_MODE {
+                if let Err(e) = crate::managed_mode::apply_managed_runtime_overrides(&app_state) {
+                    log::warn!("✗ Failed to apply managed runtime overrides: {e}");
                 }
-                Ok(_) => log::debug!("○ No new OpenCode providers to import"),
-                Err(e) => log::warn!("✗ Failed to import OpenCode providers: {e}"),
-            }
-            match crate::services::provider::import_openclaw_providers_from_live(&app_state) {
-                Ok(count) if count > 0 => {
-                    log::info!("✓ Imported {count} OpenClaw provider(s) from live config");
+            } else {
+                match crate::services::provider::import_opencode_providers_from_live(&app_state) {
+                    Ok(count) if count > 0 => {
+                        log::info!("✓ Imported {count} OpenCode provider(s) from live config");
+                    }
+                    Ok(_) => log::debug!("○ No new OpenCode providers to import"),
+                    Err(e) => log::warn!("✗ Failed to import OpenCode providers: {e}"),
                 }
-                Ok(_) => log::debug!("○ No new OpenClaw providers to import"),
-                Err(e) => log::warn!("✗ Failed to import OpenClaw providers: {e}"),
-            }
-            match crate::services::provider::import_hermes_providers_from_live(&app_state) {
-                Ok(count) if count > 0 => {
-                    log::info!("✓ Imported {count} Hermes provider(s) from live config");
+                match crate::services::provider::import_openclaw_providers_from_live(&app_state) {
+                    Ok(count) if count > 0 => {
+                        log::info!("✓ Imported {count} OpenClaw provider(s) from live config");
+                    }
+                    Ok(_) => log::debug!("○ No new OpenClaw providers to import"),
+                    Err(e) => log::warn!("✗ Failed to import OpenClaw providers: {e}"),
                 }
-                Ok(_) => log::debug!("○ No new Hermes providers to import"),
-                Err(e) => log::warn!("✗ Failed to import Hermes providers: {e}"),
+                match crate::services::provider::import_hermes_providers_from_live(&app_state) {
+                    Ok(count) if count > 0 => {
+                        log::info!("✓ Imported {count} Hermes provider(s) from live config");
+                    }
+                    Ok(_) => log::debug!("○ No new Hermes providers to import"),
+                    Err(e) => log::warn!("✗ Failed to import Hermes providers: {e}"),
+                }
             }
 
             // 2. OMO 配置导入（当数据库中无 OMO provider 时，从本地文件导入）
@@ -695,12 +722,16 @@ pub fn run() {
                 #[cfg(target_os = "linux")]
                 {
                     // Use Tauri's path API to get correct path (includes app identifier)
-                    // tauri-plugin-deep-link writes to: ~/.local/share/com.ccswitch.desktop/applications/cc-switch-handler.desktop
+                    // tauri-plugin-deep-link 在 data_dir()/applications/ 下写入 handler .desktop
                     // Only register if .desktop file doesn't exist to avoid overwriting user customizations
                     let should_register = app
                         .path()
                         .data_dir()
-                        .map(|d| !d.join("applications/cc-switch-handler.desktop").exists())
+                        .map(|d| {
+                            !d.join("applications")
+                                .join(crate::app_identity::APP_LINUX_DEEPLINK_HANDLER_DESKTOP)
+                                .exists()
+                        })
                         .unwrap_or(true);
 
                     if should_register {
@@ -743,7 +774,7 @@ pub fn run() {
                         log::debug!("  URL[{i}]: {}", redact_url_for_log(url_str));
 
                         if handle_deeplink_url(&app_handle, url_str, true, "on_open_url") {
-                            break; // Process only first ccswitch:// URL
+                            break; // Process only first supported deep-link URL
                         }
                     }
                 }
@@ -755,7 +786,7 @@ pub fn run() {
 
             // 构建托盘
             let mut tray_builder = TrayIconBuilder::with_id(tray::TRAY_ID)
-                .tooltip("CC Switch") // 鼠标悬停提示
+                .tooltip("NexusKey") // 鼠标悬停提示
                 .on_tray_icon_event(|tray, event| match event {
                     // 鼠标悬停/点击到托盘图标时，后台异步刷新用量缓存，
                     // 让用户下一次（或快速打开菜单的那一刻）看到较新的数字。
@@ -1031,13 +1062,16 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_providers,
-            commands::get_current_provider,
-            commands::add_provider,
+              commands::get_current_provider,
+              commands::get_managed_model_state,
+              commands::add_provider,
             commands::update_provider,
             commands::delete_provider,
             commands::remove_provider_from_live_config,
-            commands::switch_provider,
-            commands::import_default_config,
+              commands::switch_provider,
+              commands::clear_current_provider,
+              commands::set_managed_model,
+              commands::import_default_config,
             commands::get_claude_config_status,
             commands::get_config_status,
             commands::get_claude_code_config_path,
@@ -1383,13 +1417,13 @@ pub fn run() {
                         }
                     }
                 }
-                // 处理通过自定义 URL 协议触发的打开事件（例如 ccswitch://...）
+                // 处理通过自定义 URL 协议触发的打开事件（例如 nexuskey://...）
                 RunEvent::Opened { urls } => {
                     if let Some(url) = urls.first() {
                         let url_str = url.to_string();
                         log::info!("RunEvent::Opened with URL: {url_str}");
 
-                        if url_str.starts_with("ccswitch://") {
+                        if crate::app_identity::is_supported_deeplink_url(&url_str) {
                             if crate::lightweight::is_lightweight_mode() {
                                 if let Err(e) = crate::lightweight::exit_lightweight_mode(app_handle)
                                 {
@@ -1655,7 +1689,7 @@ fn show_migration_error_dialog(app: &tauri::AppHandle, error: &str) -> bool {
         format!(
             "从旧版本迁移配置时发生错误：\n\n{error}\n\n\
             您的数据尚未丢失，旧配置文件仍然保留。\n\
-            建议回退到旧版本 CC Switch 以保护数据。\n\n\
+            建议回退到旧版本 NexusKey 以保护数据。\n\n\
             点击「重试」重新尝试迁移\n\
             点击「退出」关闭程序（可回退版本后重新打开）"
         )
@@ -1663,7 +1697,7 @@ fn show_migration_error_dialog(app: &tauri::AppHandle, error: &str) -> bool {
         format!(
             "An error occurred while migrating configuration:\n\n{error}\n\n\
             Your data is NOT lost - the old config file is still preserved.\n\
-            Consider rolling back to an older CC Switch version.\n\n\
+            Consider rolling back to an older NexusKey version.\n\n\
             Click 'Retry' to attempt migration again\n\
             Click 'Exit' to close the program"
         )
@@ -1713,7 +1747,7 @@ fn show_database_init_error_dialog(
             您的数据尚未丢失，应用不会自动删除数据库文件。\n\
             常见原因包括：数据库版本过新、文件损坏、权限不足、磁盘空间不足等。\n\n\
             建议：\n\
-            1) 先备份整个配置目录（包含 cc-switch.db）\n\
+            1) 先备份整个配置目录（包含 nexuskey.db）\n\
             2) 如果提示“数据库版本过新”，请升级到更新版本\n\
             3) 如果刚升级出现异常，可回退旧版本导出/备份后再升级\n\n\
             点击「重试」重新尝试初始化\n\
@@ -1727,8 +1761,8 @@ fn show_database_init_error_dialog(
             Your data is NOT lost - the app will not delete the database automatically.\n\
             Common causes include: newer database version, corrupted file, permission issues, or low disk space.\n\n\
             Suggestions:\n\
-            1) Back up the entire config directory (including cc-switch.db)\n\
-            2) If you see “database version is newer”, please upgrade CC Switch\n\
+            1) Back up the entire config directory (including nexuskey.db)\n\
+            2) If you see “database version is newer”, please upgrade NexusKey\n\
             3) If this happened right after upgrading, consider rolling back to export/backup then upgrade again\n\n\
             Click 'Retry' to attempt initialization again\n\
             Click 'Exit' to close the program",

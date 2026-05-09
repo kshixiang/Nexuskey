@@ -2005,8 +2005,9 @@ export function ProviderForm({
           ) : appId === "opencode" &&
             (category === "omo" || category === "omo-slim") ? (
             <div className="space-y-2">
-              <Label>{t("provider.configJson")}</Label>
+              <Label htmlFor="omo-config-preview">{t("provider.configJson")}</Label>
               <JsonEditor
+                id="omo-config-preview"
                 value={omoDraft.mergedOmoJsonPreview}
                 onChange={() => {}}
                 rows={14}

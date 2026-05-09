@@ -44,6 +44,14 @@ fn read_override_from_store(app: &tauri::AppHandle) -> Option<PathBuf> {
 
             let path = resolve_path(path_str);
 
+            if is_foreign_assistant_data_path(&path) {
+                log::warn!(
+                    "Store 中的 app_config_dir 指向其他助手应用的数据目录（{}），已忽略并回退默认目录。",
+                    path.display()
+                );
+                return None;
+            }
+
             if !path.exists() {
                 log::warn!(
                     "Store 中配置的 app_config_dir 不存在: {path:?}\n\
@@ -61,6 +69,19 @@ fn read_override_from_store(app: &tauri::AppHandle) -> Option<PathBuf> {
         }
         None => None,
     }
+}
+
+/// 常见第三方助手默认路径，避免本应用误用其配置/数据库。
+fn is_foreign_assistant_data_path(path: &PathBuf) -> bool {
+    let last = path
+        .file_name()
+        .map(|v| v.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    if last == ".cc-switch" || last == "cc-switch" {
+        return true;
+    }
+
+    path.join("cc-switch.db").exists()
 }
 
 /// 从 Store 刷新 app_config_dir 覆盖值并更新缓存
@@ -84,6 +105,13 @@ pub fn set_app_config_dir_to_store(
         Some(p) => {
             let trimmed = p.trim();
             if !trimmed.is_empty() {
+                let resolved = resolve_path(trimmed);
+                if is_foreign_assistant_data_path(&resolved) {
+                    return Err(AppError::Config(format!(
+                        "配置目录与其他助手应用冲突：{}。请改用 NexusKey 独立目录（例如 ~/.nexuskey）。",
+                        resolved.display()
+                    )));
+                }
                 store.set(STORE_KEY_APP_CONFIG_DIR, Value::String(trimmed.to_string()));
                 log::info!("已将 app_config_dir 写入 Store: {trimmed}");
             } else {

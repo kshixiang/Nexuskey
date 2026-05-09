@@ -7,84 +7,31 @@ import type {
   Settings,
 } from "@/types";
 
+import { createMockProviderBundle } from "./mockProviders";
+
 type ProvidersByApp = Record<AppId, Record<string, Provider>>;
 type CurrentProviderState = Record<AppId, string>;
 type McpConfigState = Record<AppId, Record<string, McpServer>>;
 type LiveProviderIdsByApp = Record<"opencode" | "openclaw" | "hermes", string[]>;
 
-const createDefaultProviders = (): ProvidersByApp => ({
-  claude: {
-    "claude-1": {
-      id: "claude-1",
-      name: "Claude Default",
-      settingsConfig: {},
-      category: "official",
-      sortIndex: 0,
-      createdAt: Date.now(),
-    },
-    "claude-2": {
-      id: "claude-2",
-      name: "Claude Custom",
-      settingsConfig: {},
-      category: "custom",
-      sortIndex: 1,
-      createdAt: Date.now() + 1,
-    },
-  },
-  codex: {
-    "codex-1": {
-      id: "codex-1",
-      name: "Codex Default",
-      settingsConfig: {},
-      category: "official",
-      sortIndex: 0,
-      createdAt: Date.now(),
-    },
-    "codex-2": {
-      id: "codex-2",
-      name: "Codex Secondary",
-      settingsConfig: {},
-      category: "custom",
-      sortIndex: 1,
-      createdAt: Date.now() + 1,
-    },
-  },
-  gemini: {
-    "gemini-1": {
-      id: "gemini-1",
-      name: "Gemini Default",
-      settingsConfig: {
-        env: {
-          GEMINI_API_KEY: "test-key",
-          GOOGLE_GEMINI_BASE_URL: "https://generativelanguage.googleapis.com",
-        },
-      },
-      category: "official",
-      sortIndex: 0,
-      createdAt: Date.now(),
-    },
-  },
-  opencode: {},
-  openclaw: {},
-  hermes: {},
-});
+const initialProviderBundle = createMockProviderBundle();
+
+const createDefaultProviders = (): ProvidersByApp =>
+  JSON.parse(JSON.stringify(initialProviderBundle.providers)) as ProvidersByApp;
 
 const createDefaultCurrent = (): CurrentProviderState => ({
-  claude: "claude-1",
-  codex: "codex-1",
-  gemini: "gemini-1",
-  opencode: "",
-  openclaw: "",
-  hermes: "",
+  ...initialProviderBundle.current,
+});
+
+const createDefaultLiveProviderIds = (): LiveProviderIdsByApp => ({
+  opencode: [...initialProviderBundle.liveProviderIds.opencode],
+  openclaw: [...initialProviderBundle.liveProviderIds.openclaw],
+  hermes: [...initialProviderBundle.liveProviderIds.hermes],
 });
 
 let providers = createDefaultProviders();
 let current = createDefaultCurrent();
-let liveProviderIds: LiveProviderIdsByApp = {
-  opencode: [],
-  openclaw: [],
-  hermes: [],
-};
+let liveProviderIds: LiveProviderIdsByApp = createDefaultLiveProviderIds();
 let settingsState: Settings = {
   showInTray: true,
   minimizeToTrayOnClose: true,
@@ -92,6 +39,7 @@ let settingsState: Settings = {
   claudeConfigDir: "/default/claude",
   codexConfigDir: "/default/codex",
   language: "zh",
+  firstRunNoticeConfirmed: true,
 };
 let appConfigDirOverride: string | null = null;
 const sessionMessageKey = (providerId: string, sourcePath: string) =>
@@ -195,11 +143,7 @@ const cloneProviders = (value: ProvidersByApp) =>
 export const resetProviderState = () => {
   providers = createDefaultProviders();
   current = createDefaultCurrent();
-  liveProviderIds = {
-    opencode: [],
-    openclaw: [],
-    hermes: [],
-  };
+  liveProviderIds = createDefaultLiveProviderIds();
   sessionsState = createDefaultSessions();
   sessionMessagesState = createDefaultSessionMessages();
   settingsState = {
@@ -209,6 +153,7 @@ export const resetProviderState = () => {
     claudeConfigDir: "/default/claude",
     codexConfigDir: "/default/codex",
     language: "zh",
+    firstRunNoticeConfirmed: true,
   };
   appConfigDirOverride = null;
   mcpConfigs = {

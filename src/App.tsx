@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
   Settings,
@@ -13,20 +12,11 @@ import {
   Maximize2,
   Minimize2,
   X,
-  Book,
-  Brain,
-  Wrench,
   RefreshCw,
-  History,
   BarChart2,
-  Download,
   FolderArchive,
   Search,
-  FolderOpen,
-  KeyRound,
-  Shield,
-  Cpu,
-  LayoutDashboard,
+  Power,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Provider, VisibleApps } from "@/types";
@@ -34,17 +24,22 @@ import type { EnvConflict } from "@/types/env";
 import { useProvidersQuery, useSettingsQuery } from "@/lib/query";
 import {
   providersApi,
-  settingsApi,
   type AppId,
   type ProviderSwitchEvent,
 } from "@/lib/api";
 import { checkAllEnvConflicts, checkEnvConflicts } from "@/lib/api/env";
 import { useProviderActions } from "@/hooks/useProviderActions";
-import { openclawKeys, useOpenClawHealth } from "@/hooks/useOpenClaw";
-import { hermesKeys, useOpenHermesWebUI } from "@/hooks/useHermes";
+import {
+  useOpenClawDefaultModel,
+  useOpenClawHealth,
+  useOpenClawLiveProviderIds,
+} from "@/hooks/useOpenClaw";
+import {
+  useHermesLiveProviderIds,
+  useHermesModelConfig,
+} from "@/hooks/useHermes";
 import { hermesApi } from "@/lib/api/hermes";
 import { useProxyStatus } from "@/hooks/useProxyStatus";
-import { useAutoCompact } from "@/hooks/useAutoCompact";
 import { useUsageCacheBridge } from "@/hooks/useUsageCacheBridge";
 import { useLastValidValue } from "@/hooks/useLastValidValue";
 import { extractErrorMessage } from "@/utils/errorUtils";
@@ -57,7 +52,6 @@ import {
   DRAG_REGION_STYLE,
 } from "@/lib/platform";
 import { AppSwitcher } from "@/components/AppSwitcher";
-import { ProviderList } from "@/components/providers/ProviderList";
 import { AddProviderDialog } from "@/components/providers/AddProviderDialog";
 import { EditProviderDialog } from "@/components/providers/EditProviderDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -75,19 +69,22 @@ import { DeepLinkImportDialog } from "@/components/DeepLinkImportDialog";
 import { FirstRunNoticeDialog } from "@/components/FirstRunNoticeDialog";
 import { AgentsPanel } from "@/components/agents/AgentsPanel";
 import { UniversalProviderPanel } from "@/components/universal";
-import { McpIcon } from "@/components/BrandIcons";
 import { Button } from "@/components/ui/button";
 import { SessionManagerPage } from "@/components/sessions/SessionManagerPage";
-import {
-  useDisableCurrentOmo,
-  useDisableCurrentOmoSlim,
-} from "@/lib/query/omo";
 import WorkspaceFilesPanel from "@/components/workspace/WorkspaceFilesPanel";
 import EnvPanel from "@/components/openclaw/EnvPanel";
 import ToolsPanel from "@/components/openclaw/ToolsPanel";
 import AgentsDefaultsPanel from "@/components/openclaw/AgentsDefaultsPanel";
 import OpenClawHealthBanner from "@/components/openclaw/OpenClawHealthBanner";
 import HermesMemoryPanel from "@/components/hermes/HermesMemoryPanel";
+import {
+  isManagedModeEnabled,
+  MANAGED_APP_TITLE,
+} from "@/config/managedMode";
+import { useUsageSummary } from "@/lib/query/usage";
+import { ManagedModelSelector } from "@/components/providers/ManagedModelSelector";
+import { ProviderUsageLogPanel } from "@/components/providers/ProviderUsageLogPanel";
+import { ProviderCapsuleControl } from "@/components/providers/ProviderCapsuleControl";
 
 type View =
   | "providers"
@@ -114,7 +111,7 @@ interface WebDavSyncStatusUpdatedPayload {
 const DEFAULT_DRAG_BAR_HEIGHT = isWindows() || isLinux() ? 0 : 28; // px
 const HEADER_HEIGHT = 64; // px
 
-const STORAGE_KEY = "cc-switch-last-app";
+const STORAGE_KEY = "nexuskey-last-app";
 const VALID_APPS: AppId[] = [
   "claude",
   "codex",
@@ -132,7 +129,7 @@ const getInitialApp = (): AppId => {
   return "claude";
 };
 
-const VIEW_STORAGE_KEY = "cc-switch-last-view";
+const VIEW_STORAGE_KEY = "nexuskey-last-view";
 const VALID_VIEWS: View[] = [
   "providers",
   "settings",
@@ -161,6 +158,7 @@ const getInitialView = (): View => {
 function App() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const managedMode = isManagedModeEnabled();
 
   const [activeApp, setActiveApp] = useState<AppId>(getInitialApp);
   const [currentView, setCurrentView] = useState<View>(getInitialView);
@@ -219,18 +217,11 @@ function App() {
 
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
   const [usageProvider, setUsageProvider] = useState<Provider | null>(null);
-  const [confirmAction, setConfirmAction] = useState<{
-    provider: Provider;
-    action: "remove" | "delete";
-  } | null>(null);
   const [envConflicts, setEnvConflicts] = useState<EnvConflict[]>([]);
   const [showEnvBanner, setShowEnvBanner] = useState(false);
 
   const effectiveEditingProvider = useLastValidValue(editingProvider);
   const effectiveUsageProvider = useLastValidValue(usageProvider);
-
-  const toolbarRef = useRef<HTMLDivElement>(null);
-  const isToolbarCompact = useAutoCompact(toolbarRef);
 
   useUsageCacheBridge();
 
@@ -238,23 +229,10 @@ function App() {
   const mcpPanelRef = useRef<any>(null);
   const skillsPageRef = useRef<any>(null);
   const unifiedSkillsPanelRef = useRef<any>(null);
-  const addActionButtonClass =
-    "bg-orange-500 hover:bg-orange-600 dark:bg-orange-500 dark:hover:bg-orange-600 text-white shadow-lg shadow-orange-500/30 dark:shadow-orange-500/40 rounded-full w-8 h-8";
 
-  const {
-    isRunning: isProxyRunning,
-    takeoverStatus,
-    status: proxyStatus,
-  } = useProxyStatus();
+  const { isRunning: isProxyRunning, takeoverStatus } = useProxyStatus();
   const isCurrentAppTakeoverActive = takeoverStatus?.[activeApp] || false;
-  const activeProviderId = useMemo(() => {
-    const target = proxyStatus?.active_targets?.find(
-      (t) => t.app_type === activeApp,
-    );
-    return target?.provider_id;
-  }, [proxyStatus?.active_targets, activeApp]);
-
-  const { data, isLoading, refetch } = useProvidersQuery(activeApp, {
+  const { data, refetch } = useProvidersQuery(activeApp, {
     isProxyRunning,
   });
   const providers = useMemo(() => data?.providers ?? {}, [data]);
@@ -269,61 +247,34 @@ function App() {
       currentView === "openclawAgents");
   const { data: openclawHealthWarnings = [] } =
     useOpenClawHealth(isOpenClawView);
-  const hasSkillsSupport = true;
-  const hasSessionSupport =
-    activeApp === "claude" ||
-    activeApp === "codex" ||
-    activeApp === "opencode" ||
-    activeApp === "openclaw" ||
-    activeApp === "gemini" ||
-    activeApp === "hermes";
+  const { data: opencodeLiveIds } = useQuery({
+    queryKey: ["opencodeLiveProviderIds"],
+    queryFn: () => providersApi.getOpenCodeLiveProviderIds(),
+    enabled: currentView === "providers" && activeApp === "opencode",
+  });
+  useOpenClawLiveProviderIds(
+    currentView === "providers" && activeApp === "openclaw",
+  );
+  const { data: openclawDefaultModel } = useOpenClawDefaultModel(
+    currentView === "providers" && activeApp === "openclaw",
+  );
+  const { data: hermesLiveIds } = useHermesLiveProviderIds(
+    currentView === "providers" && activeApp === "hermes",
+  );
+  const { data: hermesModelConfig } = useHermesModelConfig(
+    currentView === "providers" && activeApp === "hermes",
+  );
 
   const {
     addProvider,
     updateProvider,
     switchProvider,
-    deleteProvider,
     saveUsageScript,
-    setAsDefaultModel,
   } = useProviderActions(
     activeApp,
     isProxyRunning,
     isProxyRunning && isCurrentAppTakeoverActive,
   );
-
-  const disableOmoMutation = useDisableCurrentOmo();
-  const handleDisableOmo = () => {
-    disableOmoMutation.mutate(undefined, {
-      onSuccess: () => {
-        toast.success(t("omo.disabled", { defaultValue: "OMO 已停用" }));
-      },
-      onError: (error: Error) => {
-        toast.error(
-          t("omo.disableFailed", {
-            defaultValue: "停用 OMO 失败: {{error}}",
-            error: extractErrorMessage(error),
-          }),
-        );
-      },
-    });
-  };
-
-  const disableOmoSlimMutation = useDisableCurrentOmoSlim();
-  const handleDisableOmoSlim = () => {
-    disableOmoSlimMutation.mutate(undefined, {
-      onSuccess: () => {
-        toast.success(t("omo.disabled", { defaultValue: "OMO 已停用" }));
-      },
-      onError: (error: Error) => {
-        toast.error(
-          t("omo.disableFailed", {
-            defaultValue: "停用 OMO 失败: {{error}}",
-            error: extractErrorMessage(error),
-          }),
-        );
-      },
-    });
-  };
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -626,22 +577,6 @@ function App() {
   }, []);
 
   const [launchDashboardOpen, setLaunchDashboardOpen] = useState(false);
-  const openHermesWebUI = useOpenHermesWebUI(() =>
-    setLaunchDashboardOpen(true),
-  );
-
-  const handleOpenWebsite = async (url: string) => {
-    try {
-      await settingsApi.openExternal(url);
-    } catch (error) {
-      const detail =
-        extractErrorMessage(error) ||
-        t("notifications.openLinkFailed", {
-          defaultValue: "链接打开失败",
-        });
-      toast.error(detail);
-    }
-  };
 
   const handleEditProvider = async ({
     provider,
@@ -652,182 +587,6 @@ function App() {
   }) => {
     await updateProvider(provider, originalId);
     setEditingProvider(null);
-  };
-
-  const handleConfirmAction = async () => {
-    if (!confirmAction) return;
-    const { provider, action } = confirmAction;
-
-    if (action === "remove") {
-      // Remove from live config only (for additive mode apps like OpenCode/OpenClaw)
-      // Does NOT delete from database - provider remains in the list
-      await providersApi.removeFromLiveConfig(provider.id, activeApp);
-      // Invalidate queries to refresh the isInConfig state
-      if (activeApp === "opencode") {
-        await queryClient.invalidateQueries({
-          queryKey: ["opencodeLiveProviderIds"],
-        });
-      } else if (activeApp === "openclaw") {
-        await queryClient.invalidateQueries({
-          queryKey: openclawKeys.liveProviderIds,
-        });
-        await queryClient.invalidateQueries({
-          queryKey: openclawKeys.health,
-        });
-      } else if (activeApp === "hermes") {
-        await queryClient.invalidateQueries({
-          queryKey: hermesKeys.liveProviderIds,
-        });
-      }
-      toast.success(
-        t("notifications.removeFromConfigSuccess", {
-          defaultValue: "已从配置移除",
-        }),
-        { closeButton: true },
-      );
-    } else {
-      await deleteProvider(provider.id);
-    }
-    setConfirmAction(null);
-  };
-
-  const generateUniqueProviderCopyKey = (
-    originalKey: string,
-    existingKeys: string[],
-  ): string => {
-    const baseKey = `${originalKey}-copy`;
-
-    if (!existingKeys.includes(baseKey)) {
-      return baseKey;
-    }
-
-    let counter = 2;
-    while (existingKeys.includes(`${baseKey}-${counter}`)) {
-      counter++;
-    }
-    return `${baseKey}-${counter}`;
-  };
-
-  const handleDuplicateProvider = async (provider: Provider) => {
-    const newSortIndex =
-      provider.sortIndex !== undefined ? provider.sortIndex + 1 : undefined;
-
-    const duplicatedProvider: Omit<Provider, "id" | "createdAt"> & {
-      providerKey?: string;
-      addToLive?: boolean;
-    } = {
-      name: `${provider.name} copy`,
-      settingsConfig: JSON.parse(JSON.stringify(provider.settingsConfig)), // 深拷贝
-      websiteUrl: provider.websiteUrl,
-      category: provider.category,
-      sortIndex: newSortIndex, // 复制原 sortIndex + 1
-      meta: provider.meta
-        ? JSON.parse(JSON.stringify(provider.meta))
-        : undefined, // 深拷贝
-      icon: provider.icon,
-      iconColor: provider.iconColor,
-    };
-
-    if (
-      activeApp === "opencode" ||
-      activeApp === "openclaw" ||
-      activeApp === "hermes"
-    ) {
-      let liveProviderIds: string[] = [];
-      try {
-        liveProviderIds =
-          activeApp === "opencode"
-            ? await queryClient.ensureQueryData({
-                queryKey: ["opencodeLiveProviderIds"],
-                queryFn: () => providersApi.getOpenCodeLiveProviderIds(),
-              })
-            : activeApp === "openclaw"
-              ? await queryClient.ensureQueryData({
-                  queryKey: openclawKeys.liveProviderIds,
-                  queryFn: () => providersApi.getOpenClawLiveProviderIds(),
-                })
-              : await queryClient.ensureQueryData({
-                  queryKey: hermesKeys.liveProviderIds,
-                  queryFn: () => providersApi.getHermesLiveProviderIds(),
-                });
-      } catch (error) {
-        console.error(
-          "[App] Failed to load live provider IDs for duplication",
-          error,
-        );
-        const errorMessage = extractErrorMessage(error);
-        toast.error(
-          t("provider.duplicateLiveIdsLoadFailed", {
-            defaultValue: "读取配置中的供应商标识失败，请先修复配置后再试",
-          }) + (errorMessage ? `: ${errorMessage}` : ""),
-        );
-        return;
-      }
-      const existingKeys = Array.from(
-        new Set([...Object.keys(providers), ...liveProviderIds]),
-      );
-      duplicatedProvider.providerKey = generateUniqueProviderCopyKey(
-        provider.id,
-        existingKeys,
-      );
-      duplicatedProvider.addToLive = false;
-    }
-
-    if (provider.sortIndex !== undefined) {
-      const updates = Object.values(providers)
-        .filter(
-          (p) =>
-            p.sortIndex !== undefined &&
-            p.sortIndex >= newSortIndex! &&
-            p.id !== provider.id,
-        )
-        .map((p) => ({
-          id: p.id,
-          sortIndex: p.sortIndex! + 1,
-        }));
-
-      if (updates.length > 0) {
-        try {
-          await providersApi.updateSortOrder(updates, activeApp);
-        } catch (error) {
-          console.error("[App] Failed to update sort order", error);
-          toast.error(
-            t("provider.sortUpdateFailed", {
-              defaultValue: "排序更新失败",
-            }),
-          );
-          return; // 如果排序更新失败，不继续添加
-        }
-      }
-    }
-
-    await addProvider(duplicatedProvider);
-  };
-
-  const handleOpenTerminal = async (provider: Provider) => {
-    try {
-      const selectedDir = await settingsApi.pickDirectory();
-      if (!selectedDir) {
-        return;
-      }
-
-      await providersApi.openTerminal(provider.id, activeApp, {
-        cwd: selectedDir,
-      });
-      toast.success(
-        t("provider.terminalOpened", {
-          defaultValue: "终端已打开",
-        }),
-      );
-    } catch (error) {
-      console.error("[App] Failed to open terminal", error);
-      const errorMessage = extractErrorMessage(error);
-      toast.error(
-        t("provider.terminalOpenFailed", {
-          defaultValue: "打开终端失败",
-        }) + (errorMessage ? `: ${errorMessage}` : ""),
-      );
-    }
   };
 
   const handleImportSuccess = async () => {
@@ -850,6 +609,118 @@ function App() {
       console.error("[App] Failed to refresh tray menu", error);
     }
   };
+
+  const providerEntries = useMemo(
+    () =>
+      Object.values(providers).sort((a, b) => {
+        const left = a.sortIndex ?? Number.MAX_SAFE_INTEGER;
+        const right = b.sortIndex ?? Number.MAX_SAFE_INTEGER;
+        if (left !== right) return left - right;
+        return (a.createdAt ?? 0) - (b.createdAt ?? 0);
+      }),
+    [providers],
+  );
+
+  const primaryProvider = useMemo(() => {
+    if (providerEntries.length === 0) return null;
+
+    if (activeApp === "opencode") {
+      const currentOmoProvider =
+        providerEntries.find((provider) => provider.id === currentProviderId) ??
+        providerEntries[0];
+      return currentOmoProvider;
+    }
+
+    if (currentProviderId) {
+      const currentProvider = providerEntries.find(
+        (provider) => provider.id === currentProviderId,
+      );
+      if (currentProvider) return currentProvider;
+    }
+
+    return providerEntries[0];
+  }, [activeApp, currentProviderId, providerEntries]);
+
+  const primaryProviderName =
+    primaryProvider?.name ?? t(`apps.${activeApp}`, { defaultValue: activeApp });
+
+  const primaryProviderActive = useMemo(() => {
+    if (!primaryProvider) return false;
+
+    if (activeApp === "opencode") {
+      return (
+        primaryProvider.id === currentProviderId ||
+        (opencodeLiveIds?.includes(primaryProvider.id) ?? false)
+      );
+    }
+
+    if (activeApp === "openclaw") {
+      return (
+        openclawDefaultModel?.primary?.startsWith(`${primaryProvider.id}/`) ??
+        false
+      );
+    }
+
+    if (activeApp === "hermes") {
+      return (
+        hermesModelConfig?.provider === primaryProvider.id ||
+        (hermesLiveIds?.includes(primaryProvider.id) ?? false)
+      );
+    }
+
+    return primaryProvider.id === currentProviderId;
+  }, [
+    activeApp,
+    currentProviderId,
+    hermesLiveIds,
+    hermesModelConfig?.provider,
+    opencodeLiveIds,
+    openclawDefaultModel?.primary,
+    primaryProvider,
+  ]);
+  const usageRange = useMemo(
+    () => ({ preset: "30d" as const }),
+    [],
+  );
+  const { data: usageSummary } = useUsageSummary(usageRange, activeApp, {
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: true,
+  });
+  const totalConsumedTokens = useMemo(() => {
+    if (!usageSummary) return 0;
+    return (
+      (usageSummary.totalInputTokens ?? 0) +
+      (usageSummary.totalOutputTokens ?? 0) +
+      (usageSummary.totalCacheCreationTokens ?? 0) +
+      (usageSummary.totalCacheReadTokens ?? 0)
+    );
+  }, [usageSummary]);
+  const usageRangeToday = useMemo(
+    () => ({ preset: "today" as const }),
+    [],
+  );
+  const { data: usageSummaryToday } = useUsageSummary(
+    usageRangeToday,
+    activeApp,
+    {
+      refetchInterval: 60_000,
+      refetchIntervalInBackground: true,
+    },
+  );
+  const todayConsumedTokens = useMemo(() => {
+    if (!usageSummaryToday) return 0;
+    return (
+      (usageSummaryToday.totalInputTokens ?? 0) +
+      (usageSummaryToday.totalOutputTokens ?? 0) +
+      (usageSummaryToday.totalCacheCreationTokens ?? 0) +
+      (usageSummaryToday.totalCacheReadTokens ?? 0)
+    );
+  }, [usageSummaryToday]);
+  const providerIndexLabel = useMemo(() => {
+    if (!primaryProvider) return "00";
+    const index = providerEntries.findIndex((p) => p.id === primaryProvider.id);
+    return String(Math.max(0, index) + 1).padStart(2, "0");
+  }, [primaryProvider, providerEntries]);
 
   const notifyWindowControlError = (error: unknown) => {
     toast.error(
@@ -957,67 +828,150 @@ function App() {
           return <AgentsDefaultsPanel />;
         default:
           return (
-            <div className="px-6 flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="flex-1 overflow-y-auto overflow-x-hidden pb-12 px-1">
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={activeApp}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.15 }}
-                    className="space-y-4"
-                  >
-                    <ProviderList
-                      providers={providers}
-                      currentProviderId={currentProviderId}
-                      appId={activeApp}
-                      isLoading={isLoading}
-                      isProxyRunning={isProxyRunning}
-                      isProxyTakeover={
-                        isProxyRunning && isCurrentAppTakeoverActive
-                      }
-                      activeProviderId={activeProviderId}
-                      onSwitch={switchProvider}
-                      onEdit={(provider) => {
-                        setEditingProvider(provider);
-                      }}
-                      onDelete={(provider) =>
-                        setConfirmAction({ provider, action: "delete" })
-                      }
-                      onRemoveFromConfig={
-                        activeApp === "opencode" ||
-                        activeApp === "openclaw" ||
-                        activeApp === "hermes"
-                          ? (provider) =>
-                              setConfirmAction({ provider, action: "remove" })
-                          : undefined
-                      }
-                      onDisableOmo={
-                        activeApp === "opencode" ? handleDisableOmo : undefined
-                      }
-                      onDisableOmoSlim={
-                        activeApp === "opencode"
-                          ? handleDisableOmoSlim
-                          : undefined
-                      }
-                      onDuplicate={handleDuplicateProvider}
-                      onConfigureUsage={setUsageProvider}
-                      onOpenWebsite={handleOpenWebsite}
-                      onOpenTerminal={
-                        activeApp === "claude" ? handleOpenTerminal : undefined
-                      }
-                      onCreate={() => setIsAddOpen(true)}
-                      onSetAsDefault={
-                        activeApp === "openclaw"
-                          ? setAsDefaultModel
-                          : activeApp === "hermes"
-                            ? switchProvider
-                            : undefined
-                      }
-                    />
-                  </motion.div>
-                </AnimatePresence>
+            <div className="flex flex-1 min-h-0 overflow-hidden bg-background">
+              <AppSwitcher
+                activeApp={activeApp}
+                onSwitch={setActiveApp}
+                visibleApps={visibleApps}
+              />
+              <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-3 pt-4 sm:px-6 sm:pb-4 sm:pt-5">
+                  <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col xl:max-w-5xl">
+                  <div key={activeApp} className="flex min-h-0 flex-1 flex-col gap-5">
+                      <section className="shrink-0 space-y-4">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="inline-flex items-center rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold tracking-wide text-muted-foreground">
+                            {t(`apps.${activeApp}`, { defaultValue: activeApp }).toUpperCase()}
+                          </span>
+
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <h2 className="min-w-0 truncate text-[20px] font-semibold leading-tight text-foreground sm:text-[22px]">
+                              {primaryProviderName}
+                            </h2>
+                            <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-foreground/90">
+                              <span
+                                className={cn(
+                                  "h-2 w-2 rounded-full",
+                                  primaryProviderActive
+                                    ? "bg-primary"
+                                    : "bg-muted-foreground/35",
+                                )}
+                              />
+                              {primaryProviderActive
+                                ? t("provider.enabledOn", { defaultValue: "已开启" })
+                                : t("provider.enabledOff", { defaultValue: "未开启" })}
+                            </span>
+                          </div>
+
+                          {!managedMode && (
+                            <Button
+                              onClick={() => setIsAddOpen(true)}
+                              size="sm"
+                              className="rounded-full"
+                            >
+                              <Plus className="mr-1.5 h-4 w-4" />
+                              {t("provider.addProvider", { defaultValue: "添加" })}
+                            </Button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                          <div className="rounded-xl border border-border/80 bg-card px-4 py-3">
+                            <div className="text-xs text-muted-foreground">
+                              {t("provider.index", { defaultValue: "供应商编号" })}
+                            </div>
+                            <div className="mt-2 text-[22px] font-semibold tabular-nums text-foreground">
+                              {providerIndexLabel}
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border border-border/80 bg-card px-4 py-3">
+                            <div className="text-xs text-muted-foreground">
+                              {t("usage.totalTokens", { defaultValue: "总Token数" })}
+                            </div>
+                            <div className="mt-2 text-[22px] font-semibold tabular-nums text-foreground">
+                              {totalConsumedTokens.toLocaleString()}
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border border-border/80 bg-card px-4 py-3">
+                            <div className="text-xs text-muted-foreground">
+                              {t("usage.todayTokens", { defaultValue: "今日用量" })}
+                            </div>
+                            <div className="mt-2 text-[22px] font-semibold tabular-nums text-foreground">
+                              {todayConsumedTokens.toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-border/80 bg-card px-4 py-4">
+                          <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-3">
+                            <div className="text-xs font-medium text-muted-foreground">
+                              {t("provider.modelLabel", { defaultValue: "模型" })}
+                            </div>
+                            <div className="flex justify-end">
+                              {primaryProvider ? (
+                                <ManagedModelSelector
+                                  appId={activeApp}
+                                  providerId={primaryProvider.id}
+                                  hideLabel
+                                  className="min-w-[260px]"
+                                />
+                              ) : null}
+                            </div>
+
+                            <div className="text-xs font-medium text-muted-foreground">
+                              {t("provider.actions", { defaultValue: "操作" })}
+                            </div>
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <ProviderCapsuleControl
+                                active={primaryProviderActive}
+                                label={
+                                  primaryProviderActive
+                                    ? t("common.close", {
+                                        defaultValue: "关闭",
+                                      })
+                                    : t("provider.enableToggle", {
+                                        defaultValue: "开启",
+                                      })
+                                }
+                                icon={Power}
+                                disabled={!primaryProvider}
+                                onClick={async () => {
+                                  if (!primaryProvider) return;
+                                  if (primaryProviderActive) {
+                                    try {
+                                      await providersApi.clearCurrent(activeApp);
+                                      await queryClient.invalidateQueries({
+                                        queryKey: ["providers", activeApp],
+                                      });
+                                      await queryClient.invalidateQueries({
+                                        queryKey: ["currentProviderId", activeApp],
+                                      });
+                                    } catch (e) {
+                                      toast.error(
+                                        t("provider.disableFailed", {
+                                          defaultValue: "关闭失败：{{error}}",
+                                          error: extractErrorMessage(e),
+                                        }),
+                                      );
+                                    }
+                                  } else {
+                                    await switchProvider(primaryProvider);
+                                  }
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </section>
+
+                      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                        <ProviderUsageLogPanel appId={activeApp} />
+                      </div>
+                  </div>
+                  </div>
+                </div>
               </div>
             </div>
           );
@@ -1025,24 +979,15 @@ function App() {
     })();
 
     return (
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={currentView}
-          className="flex-1 min-h-0"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-        >
-          {content}
-        </motion.div>
-      </AnimatePresence>
+      <div key={currentView} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {content}
+      </div>
     );
   };
 
   return (
     <div
-      className="flex flex-col h-screen overflow-hidden bg-background text-foreground selection:bg-primary/30 pb-4"
+      className="flex flex-col h-screen overflow-hidden bg-background text-foreground selection:bg-primary/30"
       style={{ overflowX: "hidden", paddingTop: contentTopOffset }}
     >
       {(dragBarHeight > 0 || useAppWindowControls) && (
@@ -1121,7 +1066,7 @@ function App() {
       )}
 
       <header
-        className="fixed z-50 w-full transition-all duration-300 bg-background/80 backdrop-blur-md"
+        className="fixed z-50 w-full border-b border-border bg-background/90 backdrop-blur-md transition-colors duration-300 supports-[backdrop-filter]:bg-background/75"
         {...DRAG_REGION_ATTR}
         style={
           {
@@ -1132,7 +1077,7 @@ function App() {
         }
       >
         <div
-          className="flex h-full items-center justify-between gap-2 px-6"
+          className="flex h-full items-center justify-between gap-2 px-4 sm:px-6"
           {...DRAG_REGION_ATTR}
           style={{ ...DRAG_REGION_STYLE } as any}
         >
@@ -1181,17 +1126,17 @@ function App() {
               <div className="flex items-center gap-2">
                 <div className="relative inline-flex items-center">
                   <a
-                    href="https://github.com/farion1231/cc-switch"
+                    href="https://github.com/SQAI/Nexuskey"
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                     className={cn(
                       "text-xl font-semibold transition-colors",
                       isProxyRunning && isCurrentAppTakeoverActive
-                        ? "text-emerald-500 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-300"
-                        : "text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300",
+                        ? "text-emerald-400 hover:text-emerald-300"
+                        : "text-primary hover:text-primary/85",
                     )}
                   >
-                    CC Switch
+                    {managedMode ? MANAGED_APP_TITLE : "NexusKey"}
                   </a>
                 </div>
                 <Button
@@ -1202,7 +1147,6 @@ function App() {
                     setCurrentView("settings");
                   }}
                   title={t("common.settings")}
-                  className="hover:bg-black/5 dark:hover:bg-white/5"
                 >
                   <Settings className="w-4 h-4" />
                 </Button>
@@ -1223,7 +1167,6 @@ function App() {
                     title={t("usage.title", {
                       defaultValue: "使用统计",
                     })}
-                    className="hover:bg-black/5 dark:hover:bg-white/5"
                   >
                     <BarChart2 className="w-4 h-4" />
                   </Button>
@@ -1232,7 +1175,7 @@ function App() {
             )}
           </div>
 
-          <div className="flex flex-1 min-w-0 items-center justify-end gap-1.5">
+          <div className="flex flex-1 min-w-0 items-center justify-end gap-2">
             {currentView === "providers" &&
               activeApp !== "opencode" &&
               activeApp !== "openclaw" &&
@@ -1250,323 +1193,120 @@ function App() {
                 </div>
               )}
             <div
-              ref={toolbarRef}
-              className="flex flex-1 min-w-0 overflow-x-hidden items-center py-4 pr-2"
+              className="flex min-w-0 items-center gap-2 py-4 pr-2"
+              style={{ WebkitAppRegion: "no-drag" } as any}
             >
-              <div
-                className="flex shrink-0 items-center gap-1.5 ml-auto"
-                style={{ WebkitAppRegion: "no-drag" } as any}
-              >
-                {currentView === "prompts" && (
+              {currentView === "skillsDiscovery" && (
+                <>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => promptPanelRef.current?.openAdd()}
-                    className="hover:bg-black/5 dark:hover:bg-white/5"
+                    onClick={() => skillsPageRef.current?.refresh()}
                   >
-                    <Plus className="w-4 h-4 mr-2" />
-                    {t("prompts.add")}
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    {t("skills.refresh")}
                   </Button>
-                )}
-                {currentView === "mcp" && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => mcpPanelRef.current?.openImport()}
-                      className="hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      {t("mcp.importExisting")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => mcpPanelRef.current?.openAdd()}
-                      className="hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      {t("mcp.addMcp")}
-                    </Button>
-                  </>
-                )}
-                {currentView === "skills" && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        unifiedSkillsPanelRef.current?.openRestoreFromBackup()
-                      }
-                      className="hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                      <History className="w-4 h-4 mr-2" />
-                      {t("skills.restoreFromBackup.button")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        unifiedSkillsPanelRef.current?.openInstallFromZip()
-                      }
-                      className="hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                      <FolderArchive className="w-4 h-4 mr-2" />
-                      {t("skills.installFromZip.button")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        unifiedSkillsPanelRef.current?.openImport()
-                      }
-                      className="hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      {t("skills.import")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setCurrentView("skillsDiscovery")}
-                      className="hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                      <Search className="w-4 h-4 mr-2" />
-                      {t("skills.discover")}
-                    </Button>
-                  </>
-                )}
-                {currentView === "skillsDiscovery" && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => skillsPageRef.current?.refresh()}
-                      className="hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                      {t("skills.refresh")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => skillsPageRef.current?.openRepoManager()}
-                      className="hover:bg-black/5 dark:hover:bg-white/5"
-                    >
-                      <Settings className="w-4 h-4 mr-2" />
-                      {t("skills.repoManager")}
-                    </Button>
-                  </>
-                )}
-                {currentView === "providers" && (
-                  <>
-                    <AppSwitcher
-                      activeApp={activeApp}
-                      onSwitch={setActiveApp}
-                      visibleApps={visibleApps}
-                      compact={isToolbarCompact}
-                    />
-
-                    <div className="flex items-center gap-1 p-1 bg-muted rounded-xl">
-                      <AnimatePresence mode="wait">
-                        <motion.div
-                          key={
-                            activeApp === "openclaw"
-                              ? "openclaw"
-                              : activeApp === "hermes"
-                                ? "hermes"
-                                : "default"
-                          }
-                          className="flex items-center gap-1"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.15 }}
-                        >
-                          {activeApp === "hermes" ? (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("skills")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("skills.manage")}
-                              >
-                                <Wrench className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("hermesMemory")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("hermes.memory.title")}
-                              >
-                                <Brain className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => void openHermesWebUI()}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("hermes.webui.open")}
-                              >
-                                <LayoutDashboard className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("mcp")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("mcp.title")}
-                              >
-                                <McpIcon size={16} />
-                              </Button>
-                            </>
-                          ) : activeApp === "openclaw" ? (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("workspace")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("workspace.manage")}
-                              >
-                                <FolderOpen className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("openclawEnv")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("openclaw.env.title")}
-                              >
-                                <KeyRound className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("openclawTools")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("openclaw.tools.title")}
-                              >
-                                <Shield className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("openclawAgents")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("openclaw.agents.title")}
-                              >
-                                <Cpu className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("sessions")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("sessionManager.title")}
-                              >
-                                <History className="w-4 h-4" />
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("skills")}
-                                className={cn(
-                                  "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5",
-                                  "transition-all duration-200 ease-in-out overflow-hidden",
-                                  hasSkillsSupport
-                                    ? "opacity-100 w-8 scale-100 px-2"
-                                    : "opacity-0 w-0 scale-75 pointer-events-none px-0 -ml-1",
-                                )}
-                                title={t("skills.manage")}
-                              >
-                                <Wrench className="flex-shrink-0 w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("prompts")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("prompts.manage")}
-                              >
-                                <Book className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("sessions")}
-                                className={cn(
-                                  "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5",
-                                  "transition-all duration-200 ease-in-out overflow-hidden",
-                                  hasSessionSupport
-                                    ? "opacity-100 w-8 scale-100 px-2"
-                                    : "opacity-0 w-0 scale-75 pointer-events-none px-0 -ml-1",
-                                )}
-                                title={t("sessionManager.title")}
-                              >
-                                <History className="flex-shrink-0 w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("mcp")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 w-8 px-2"
-                                title={t("mcp.title")}
-                              >
-                                <McpIcon size={16} />
-                              </Button>
-                            </>
-                          )}
-                        </motion.div>
-                      </AnimatePresence>
-                    </div>
-
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => skillsPageRef.current?.openRepoManager()}
+                  >
+                    <Settings className="w-4 h-4 mr-2" />
+                    {t("skills.repoManager")}
+                  </Button>
+                </>
+              )}
+              {currentView === "skills" && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      unifiedSkillsPanelRef.current?.openRestoreFromBackup()
+                    }
+                  >
+                    <FolderArchive className="w-4 h-4 mr-2" />
+                    {t("skills.restoreFromBackup.button")}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setCurrentView("skillsDiscovery")}
+                  >
+                    <Search className="w-4 h-4 mr-2" />
+                    {t("skills.discover")}
+                  </Button>
+                </>
+              )}
+              {currentView === "mcp" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => mcpPanelRef.current?.openAdd()}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  {t("mcp.addMcp")}
+                </Button>
+              )}
+              {currentView === "prompts" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => promptPanelRef.current?.openAdd()}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  {t("prompts.add")}
+                </Button>
+              )}
+              {currentView === "providers" && (
+                <>
+                  {!managedMode && (
                     <Button
                       onClick={() => setIsAddOpen(true)}
-                      size="icon"
-                      className={`ml-2 ${addActionButtonClass}`}
+                      size="sm"
+                      className="rounded-xl"
                     >
-                      <Plus className="w-5 h-5" />
+                      <Plus className="mr-2 h-4 w-4" />
+                      {t("provider.addProvider")}
                     </Button>
-                  </>
-                )}
-              </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 min-h-0 flex flex-col overflow-y-auto animate-fade-in">
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {isOpenClawView && openclawHealthWarnings.length > 0 && (
           <OpenClawHealthBanner warnings={openclawHealthWarnings} />
         )}
         {renderContent()}
       </main>
 
-      <AddProviderDialog
-        open={isAddOpen}
-        onOpenChange={setIsAddOpen}
-        appId={activeApp}
-        onSubmit={addProvider}
-      />
+      {!managedMode && (
+        <AddProviderDialog
+          open={isAddOpen}
+          onOpenChange={setIsAddOpen}
+          appId={activeApp}
+          onSubmit={addProvider}
+        />
+      )}
 
-      <EditProviderDialog
-        open={Boolean(editingProvider)}
-        provider={effectiveEditingProvider}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEditingProvider(null);
-          }
-        }}
-        onSubmit={handleEditProvider}
-        appId={activeApp}
-        isProxyTakeover={isProxyRunning && isCurrentAppTakeoverActive}
-      />
+      {!managedMode && (
+        <EditProviderDialog
+          open={Boolean(editingProvider)}
+          provider={effectiveEditingProvider}
+          onOpenChange={(open) => {
+            if (!open) {
+              setEditingProvider(null);
+            }
+          }}
+          onSubmit={handleEditProvider}
+          appId={activeApp}
+          isProxyTakeover={isProxyRunning && isCurrentAppTakeoverActive}
+        />
+      )}
 
       {effectiveUsageProvider && (
         <UsageScriptModal
@@ -1582,28 +1322,6 @@ function App() {
           }}
         />
       )}
-
-      <ConfirmDialog
-        isOpen={Boolean(confirmAction)}
-        title={
-          confirmAction?.action === "remove"
-            ? t("confirm.removeProvider")
-            : t("confirm.deleteProvider")
-        }
-        message={
-          confirmAction
-            ? confirmAction.action === "remove"
-              ? t("confirm.removeProviderMessage", {
-                  name: confirmAction.provider.name,
-                })
-              : t("confirm.deleteProviderMessage", {
-                  name: confirmAction.provider.name,
-                })
-            : ""
-        }
-        onConfirm={() => void handleConfirmAction()}
-        onCancel={() => setConfirmAction(null)}
-      />
 
       <ConfirmDialog
         isOpen={launchDashboardOpen}

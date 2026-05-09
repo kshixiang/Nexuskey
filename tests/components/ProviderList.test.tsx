@@ -13,6 +13,12 @@ vi.mock("@/hooks/useDragSort", () => ({
   useDragSort: (...args: unknown[]) => useDragSortMock(...args),
 }));
 
+vi.mock("@/config/managedMode", () => ({
+  MANAGED_MODE: false,
+  MANAGED_APP_TITLE: "NexusKey",
+  isManagedModeEnabled: () => false,
+}));
+
 vi.mock("@/components/providers/ProviderCard", () => ({
   ProviderCard: (props: any) => {
     providerCardRenderSpy(props);
@@ -163,15 +169,14 @@ describe("ProviderList Component", () => {
     expect(placeholders).toHaveLength(3);
   });
 
-  it("should show empty state and trigger create callback when no providers exist", () => {
-    const handleCreate = vi.fn();
+  it("should render nothing when no providers exist", () => {
     useDragSortMock.mockReturnValueOnce({
       sortedProviders: [],
       sensors: [],
       handleDragEnd: vi.fn(),
     });
 
-    renderWithQueryClient(
+    const { container } = renderWithQueryClient(
       <ProviderList
         providers={{}}
         currentProviderId=""
@@ -181,16 +186,10 @@ describe("ProviderList Component", () => {
         onDelete={vi.fn()}
         onDuplicate={vi.fn()}
         onOpenWebsite={vi.fn()}
-        onCreate={handleCreate}
       />,
     );
 
-    const addButton = screen.getByRole("button", {
-      name: "provider.addProvider",
-    });
-    fireEvent.click(addButton);
-
-    expect(handleCreate).toHaveBeenCalledTimes(1);
+    expect(container.firstChild).toBeNull();
   });
 
   it("should render in order returned by useDragSort and pass through action callbacks", () => {
@@ -233,16 +232,8 @@ describe("ProviderList Component", () => {
     expect(providerCardRenderSpy.mock.calls[0][0].isCurrent).toBe(true);
 
     // Drag attributes from useSortable
-    expect(
-      providerCardRenderSpy.mock.calls[0][0].dragHandleProps?.attributes[
-      "data-dnd-id"
-      ],
-    ).toBe("b");
-    expect(
-      providerCardRenderSpy.mock.calls[1][0].dragHandleProps?.attributes[
-      "data-dnd-id"
-      ],
-    ).toBe("a");
+    expect(providerCardRenderSpy.mock.calls[0][0].provider.id).toBe("b");
+    expect(providerCardRenderSpy.mock.calls[1][0].provider.id).toBe("a");
 
     // Trigger action buttons
     fireEvent.click(screen.getByTestId("switch-b"));

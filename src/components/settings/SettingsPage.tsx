@@ -43,7 +43,6 @@ import { ProxyTabContent } from "@/components/settings/ProxyTabContent";
 import { ModelTestConfigPanel } from "@/components/usage/ModelTestConfigPanel";
 import { UsageDashboard } from "@/components/usage/UsageDashboard";
 import { LogConfigPanel } from "@/components/settings/LogConfigPanel";
-import { AuthCenterPanel } from "@/components/settings/AuthCenterPanel";
 import { useInstalledSkills } from "@/hooks/useSkills";
 import { useSettings } from "@/hooks/useSettings";
 import { useImportExport } from "@/hooks/useImportExport";
@@ -104,7 +103,13 @@ export function SettingsPage({
 
   useEffect(() => {
     if (open) {
-      setActiveTab(defaultTab);
+      setActiveTab(
+        defaultTab === "auth"
+          ? "general"
+          : defaultTab === "proxy"
+            ? "advanced"
+            : defaultTab,
+      );
       resetStatus();
     }
   }, [open, resetStatus, defaultTab]);
@@ -194,13 +199,9 @@ export function SettingsPage({
           onValueChange={setActiveTab}
           className="flex flex-col h-full"
         >
-          <TabsList className="grid w-full grid-cols-6 mb-6 glass rounded-lg">
+          <TabsList className="grid w-full grid-cols-4 mb-6 glass rounded-lg">
             <TabsTrigger value="general">
               {t("settings.tabGeneral")}
-            </TabsTrigger>
-            <TabsTrigger value="proxy">{t("settings.tabProxy")}</TabsTrigger>
-            <TabsTrigger value="auth">
-              {t("settings.tabAuth", { defaultValue: "认证" })}
             </TabsTrigger>
             <TabsTrigger value="advanced">
               {t("settings.tabAdvanced")}
@@ -229,7 +230,7 @@ export function SettingsPage({
                       onChange={handleAutoSave}
                     />
                     <SkillStorageLocationSettings
-                      value={settings.skillStorageLocation ?? "cc_switch"}
+                      value={settings.skillStorageLocation ?? "nexuskey"}
                       installedCount={installedSkills?.length ?? 0}
                       onMigrated={(location) =>
                         updateSettings({ skillStorageLocation: location })
@@ -255,28 +256,13 @@ export function SettingsPage({
                 ) : null}
               </TabsContent>
 
-              <TabsContent value="proxy" className="space-y-6 mt-0 pb-4">
-                {settings ? (
-                  <ProxyTabContent
-                    settings={settings}
-                    onAutoSave={handleAutoSave}
-                  />
-                ) : null}
-              </TabsContent>
-
-              <TabsContent value="auth" className="space-y-6 mt-0 pb-4">
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="space-y-6"
-                >
-                  <AuthCenterPanel />
-                </motion.div>
-              </TabsContent>
-
               <TabsContent value="advanced" className="space-y-6 mt-0 pb-4">
                 {settings ? (
+                  <div className="space-y-6">
+                    <ProxyTabContent
+                      settings={settings}
+                      onAutoSave={handleAutoSave}
+                    />
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -461,6 +447,7 @@ export function SettingsPage({
                       </AccordionItem>
                     </Accordion>
                   </motion.div>
+                  </div>
                 ) : null}
               </TabsContent>
 

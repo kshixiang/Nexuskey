@@ -309,6 +309,16 @@ impl Database {
         Ok(())
     }
 
+    pub fn clear_current_provider(&self, app_type: &str) -> Result<(), AppError> {
+        let mut conn = lock_conn!(self.conn);
+        conn.execute(
+            "UPDATE providers SET is_current = 0 WHERE app_type = ?1",
+            params![app_type],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(())
+    }
+
     pub fn update_provider_settings_config(
         &self,
         app_type: &str,
@@ -580,6 +590,10 @@ impl Database {
     /// 与 `Database::save_provider` 的 UPSERT 语义配合，即使被意外重复调用
     /// 也不会覆盖用户当前激活的供应商（is_current 字段会被保留）。
     pub fn init_default_official_providers(&self) -> Result<usize, AppError> {
+        if crate::managed_mode::MANAGED_MODE {
+            return self.init_managed_providers();
+        }
+
         use crate::database::dao::providers_seed::OFFICIAL_SEEDS;
 
         if self
@@ -632,5 +646,49 @@ impl Database {
         self.set_setting("official_providers_seeded", "true")?;
 
         Ok(inserted)
+    }
+
+    pub fn init_managed_providers(&self) -> Result<usize, AppError> {
+        let mut synced = 0_usize;
+        let now_ms = chrono::Utc::now().timestamp_millis();
+
+        for seed in crate::managed_mode::managed_provider_seeds()? {
+            let app_type_str = seed.app_type.as_str();
+            let existing_ids = self.get_provider_ids(app_type_str)?;
+
+            for existing_id in existing_ids {
+                if existing_id != seed.provider.id {
+                    self.delete_provider(app_type_str, &existing_id)?;
+                }
+            }
+
+            let already_exists = self
+                .get_provider_by_id(&seed.provider.id, app_type_str)?
+                .is_some();
+
+            let mut provider = seed.provider.clone();
+            provider.sort_index = Some(self.next_sort_index_for_app(app_type_str)?);
+            provider.created_at = Some(now_ms);
+
+            self.save_provider(app_type_str, &provider)?;
+
+            if seed.set_current && !seed.app_type.is_additive_mode() {
+                self.set_current_provider(app_type_str, &provider.id)?;
+                crate::settings::set_current_provider(&seed.app_type, Some(&provider.id))?;
+            }
+
+            synced += 1;
+            log::info!(
+                "✓ {} managed provider: {} ({})",
+                if already_exists { "Updated" } else { "Seeded" },
+                provider.name,
+                app_type_str
+            );
+        }
+
+        self.set_setting("managed_providers_seeded", "true")?;
+        self.set_setting("official_providers_seeded", "true")?;
+
+        Ok(synced)
     }
 }

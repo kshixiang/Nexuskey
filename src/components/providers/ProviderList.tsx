@@ -15,8 +15,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import { Search, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Provider } from "@/types";
 import type { AppId } from "@/lib/api";
 import { providersApi } from "@/lib/api/providers";
@@ -31,7 +30,6 @@ import {
 } from "@/hooks/useHermes";
 import { useStreamCheck } from "@/hooks/useStreamCheck";
 import { ProviderCard } from "@/components/providers/ProviderCard";
-import { ProviderEmptyState } from "@/components/providers/ProviderEmptyState";
 import {
   useAutoFailoverEnabled,
   useFailoverQueue,
@@ -47,6 +45,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { settingsApi } from "@/lib/api/settings";
+import { isManagedModeEnabled } from "@/config/managedMode";
 
 interface ProviderListProps {
   providers: Record<string, Provider>;
@@ -62,7 +61,6 @@ interface ProviderListProps {
   onConfigureUsage?: (provider: Provider) => void;
   onOpenWebsite: (url: string) => void;
   onOpenTerminal?: (provider: Provider) => void;
-  onCreate?: () => void;
   isLoading?: boolean;
   isProxyRunning?: boolean; // 代理服务运行状态
   isProxyTakeover?: boolean; // 代理接管模式（Live配置已被接管）
@@ -84,7 +82,6 @@ export function ProviderList({
   onConfigureUsage,
   onOpenWebsite,
   onOpenTerminal,
-  onCreate,
   isLoading = false,
   isProxyRunning = false,
   isProxyTakeover = false,
@@ -92,6 +89,7 @@ export function ProviderList({
   onSetAsDefault,
 }: ProviderListProps) {
   const { t } = useTranslation();
+  const managedMode = isManagedModeEnabled();
   const { checkProvider, isChecking } = useStreamCheck(appId);
   const { sortedProviders, sensors, handleDragEnd } = useDragSort(
     providers,
@@ -231,36 +229,7 @@ export function ProviderList({
     }
   };
 
-  // Import current live config as default provider
   const queryClient = useQueryClient();
-  const importMutation = useMutation({
-    mutationFn: async (): Promise<boolean> => {
-      if (appId === "opencode") {
-        const count = await providersApi.importOpenCodeFromLive();
-        return count > 0;
-      }
-      if (appId === "openclaw") {
-        const count = await providersApi.importOpenClawFromLive();
-        return count > 0;
-      }
-      if (appId === "hermes") {
-        const count = await providersApi.importHermesFromLive();
-        return count > 0;
-      }
-      return providersApi.importDefault(appId);
-    },
-    onSuccess: (imported) => {
-      if (imported) {
-        queryClient.invalidateQueries({ queryKey: ["providers", appId] });
-        toast.success(t("provider.importCurrentDescription"));
-      } else {
-        toast.info(t("provider.noProviders"));
-      }
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
-  });
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -315,26 +284,20 @@ export function ProviderList({
   }
 
   if (sortedProviders.length === 0) {
-    return (
-      <ProviderEmptyState
-        appId={appId}
-        onCreate={onCreate}
-        onImport={() => importMutation.mutate()}
-      />
-    );
+    return null;
   }
 
   const renderProviderList = () => (
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
-      onDragEnd={handleDragEnd}
+      onDragEnd={managedMode ? undefined : handleDragEnd}
     >
       <SortableContext
         items={filteredProviders.map((provider) => provider.id)}
         strategy={verticalListSortingStrategy}
       >
-        <div className="space-y-3">
+        <div className="divide-y divide-border/50 overflow-hidden rounded-xl border border-border/50 bg-card/35">
           {filteredProviders.map((provider) => {
             const isOmo = provider.category === "omo";
             const isOmoSlim = provider.category === "omo-slim";
@@ -347,6 +310,7 @@ export function ProviderList({
               <SortableProviderCard
                 key={provider.id}
                 provider={provider}
+                managedMode={managedMode}
                 isCurrent={
                   isOmo
                     ? isOmoCurrent
@@ -399,7 +363,7 @@ export function ProviderList({
   );
 
   return (
-    <div className="mt-4 space-y-4">
+    <div className="space-y-4">
       <AnimatePresence>
         {isSearchOpen && (
           <motion.div
@@ -410,7 +374,7 @@ export function ProviderList({
             transition={{ duration: 0.18, ease: "easeOut" }}
             className="fixed left-1/2 top-[6.5rem] z-40 w-[min(90vw,26rem)] -translate-x-1/2 sm:right-6 sm:left-auto sm:translate-x-0"
           >
-            <div className="p-4 space-y-3 border shadow-md rounded-2xl border-white/10 bg-background/95 shadow-black/20 backdrop-blur-md">
+            <div className="space-y-3 rounded-2xl border border-border/70 bg-popover/95 p-4 shadow-md shadow-black/25 backdrop-blur-md">
               <div className="relative flex items-center gap-2">
                 <Search className="absolute w-4 h-4 -translate-y-1/2 pointer-events-none left-3 top-1/2 text-muted-foreground" />
                 <Input
@@ -492,6 +456,7 @@ export function ProviderList({
 
 interface SortableProviderCardProps {
   provider: Provider;
+  managedMode?: boolean;
   isCurrent: boolean;
   appId: AppId;
   isInConfig: boolean;
@@ -523,6 +488,7 @@ interface SortableProviderCardProps {
 
 function SortableProviderCard({
   provider,
+  managedMode = false,
   isCurrent,
   appId,
   isInConfig,
@@ -589,11 +555,15 @@ function SortableProviderCard({
         isTesting={isTesting}
         isProxyRunning={isProxyRunning}
         isProxyTakeover={isProxyTakeover}
-        dragHandleProps={{
-          attributes,
-          listeners,
-          isDragging,
-        }}
+        dragHandleProps={
+          managedMode
+            ? undefined
+            : {
+                attributes,
+                listeners,
+                isDragging,
+              }
+        }
         isAutoFailoverEnabled={isAutoFailoverEnabled}
         failoverPriority={failoverPriority}
         isInFailoverQueue={isInFailoverQueue}

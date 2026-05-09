@@ -8,6 +8,7 @@ import i18n from "./i18n";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/theme-provider";
 import { queryClient } from "@/lib/query";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/ui/sonner";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -39,7 +40,7 @@ interface ConfigLoadErrorPayload {
 async function handleConfigLoadError(
   payload: ConfigLoadErrorPayload | null,
 ): Promise<void> {
-  const path = payload?.path ?? "~/.cc-switch/config.json";
+  const path = payload?.path ?? "~/.nexuskey/config.json";
   const detail = payload?.error ?? "Unknown error";
 
   await message(
@@ -70,34 +71,31 @@ try {
   console.error("订阅 configLoadError 事件失败", e);
 }
 
-async function bootstrap() {
-  // 启动早期主动查询后端初始化错误，避免事件竞态
+// 先挂载界面：避免 invoke("get_init_error") 卡住或极慢时出现长时间白屏。
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider defaultTheme="system" storageKey="nexuskey-theme">
+        <UpdateProvider>
+          <ErrorBoundary>
+            <App />
+            <Toaster />
+          </ErrorBoundary>
+        </UpdateProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
+  </React.StrictMode>,
+);
+
+void (async () => {
   try {
     const initError = (await invoke(
       "get_init_error",
     )) as ConfigLoadErrorPayload | null;
     if (initError && (initError.path || initError.error)) {
       await handleConfigLoadError(initError);
-      // 注意：不会执行到这里，因为 exit(1) 会终止进程
-      return;
     }
   } catch (e) {
-    // 忽略拉取错误，继续渲染
     console.error("拉取初始化错误失败", e);
   }
-
-  ReactDOM.createRoot(document.getElementById("root")!).render(
-    <React.StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider defaultTheme="system" storageKey="cc-switch-theme">
-          <UpdateProvider>
-            <App />
-            <Toaster />
-          </UpdateProvider>
-        </ThemeProvider>
-      </QueryClientProvider>
-    </React.StrictMode>,
-  );
-}
-
-void bootstrap();
+})();

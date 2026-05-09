@@ -14,6 +14,9 @@ use crate::store::AppState;
 /// configured in openclaw.json.
 #[tauri::command]
 pub fn import_openclaw_providers_from_live(state: State<'_, AppState>) -> Result<usize, String> {
+    if crate::managed_mode::MANAGED_MODE {
+        return Err("Managed relay mode does not allow provider imports".to_string());
+    }
     crate::services::provider::import_openclaw_providers_from_live(state.inner())
         .map_err(|e| e.to_string())
 }

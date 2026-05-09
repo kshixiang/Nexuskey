@@ -1,6 +1,6 @@
 //! Skill import from deep link
 //!
-//! Handles importing skill repository configurations via ccswitch:// URLs.
+//! Handles importing skill repository configurations via `nexuskey://` URLs (and legacy `ccswitch://`).
 
 use super::DeepLinkImportRequest;
 use crate::error::AppError;
