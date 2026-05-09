@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
@@ -17,6 +17,8 @@ import {
   FolderArchive,
   Search,
   Power,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Provider, VisibleApps } from "@/types";
@@ -70,6 +72,7 @@ import { FirstRunNoticeDialog } from "@/components/FirstRunNoticeDialog";
 import { AgentsPanel } from "@/components/agents/AgentsPanel";
 import { UniversalProviderPanel } from "@/components/universal";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { SessionManagerPage } from "@/components/sessions/SessionManagerPage";
 import WorkspaceFilesPanel from "@/components/workspace/WorkspaceFilesPanel";
 import EnvPanel from "@/components/openclaw/EnvPanel";
@@ -85,6 +88,56 @@ import { useUsageSummary } from "@/lib/query/usage";
 import { ManagedModelSelector } from "@/components/providers/ManagedModelSelector";
 import { ProviderUsageLogPanel } from "@/components/providers/ProviderUsageLogPanel";
 import { ProviderCapsuleControl } from "@/components/providers/ProviderCapsuleControl";
+import {
+  getApiKeyFromConfig,
+  setApiKeyInConfig,
+} from "@/utils/providerConfigUtils";
+
+const APPS_WITH_DASHBOARD_API_KEY: readonly AppId[] = [
+  "claude",
+  "codex",
+  "gemini",
+  "hermes",
+];
+
+function readDashboardApiKey(
+  settingsConfig: Provider["settingsConfig"],
+  appId: AppId,
+): string {
+  if (!settingsConfig || typeof settingsConfig !== "object") return "";
+  if (appId === "codex") {
+    const auth = (settingsConfig as { auth?: { OPENAI_API_KEY?: unknown } })
+      .auth;
+    const k = auth?.OPENAI_API_KEY;
+    return typeof k === "string" ? k : "";
+  }
+  return getApiKeyFromConfig(JSON.stringify(settingsConfig), appId);
+}
+
+function nextSettingsConfigWithApiKey(
+  current: Provider["settingsConfig"],
+  appId: AppId,
+  apiKey: string,
+  apiKeyField?: string,
+): Record<string, unknown> {
+  const base =
+    current && typeof current === "object"
+      ? (JSON.parse(JSON.stringify(current)) as Record<string, unknown>)
+      : {};
+  if (appId === "codex") {
+    const prevAuth =
+      typeof base.auth === "object" && base.auth !== null
+        ? (base.auth as Record<string, unknown>)
+        : {};
+    return { ...base, auth: { ...prevAuth, OPENAI_API_KEY: apiKey } };
+  }
+  const json = setApiKeyInConfig(JSON.stringify(base), apiKey, {
+    createIfMissing: true,
+    appType: appId,
+    apiKeyField,
+  });
+  return JSON.parse(json) as Record<string, unknown>;
+}
 
 type View =
   | "providers"
@@ -722,6 +775,61 @@ function App() {
     return String(Math.max(0, index) + 1).padStart(2, "0");
   }, [primaryProvider, providerEntries]);
 
+  const persistedDashboardApiKey = useMemo(() => {
+    if (!primaryProvider) return "";
+    return readDashboardApiKey(primaryProvider.settingsConfig, activeApp);
+  }, [primaryProvider, activeApp]);
+
+  const [dashboardApiKeyDraft, setDashboardApiKeyDraft] = useState("");
+  const [dashboardApiKeyVisible, setDashboardApiKeyVisible] = useState(false);
+  useEffect(() => {
+    setDashboardApiKeyDraft(persistedDashboardApiKey);
+  }, [persistedDashboardApiKey, primaryProvider?.id]);
+
+  const showDashboardApiKey =
+    Boolean(primaryProvider) &&
+    APPS_WITH_DASHBOARD_API_KEY.includes(activeApp);
+
+  const flushDashboardApiKey = useCallback(async () => {
+    if (!primaryProvider || !showDashboardApiKey) return;
+    if (dashboardApiKeyDraft === persistedDashboardApiKey) return;
+    try {
+      const nextConfig = nextSettingsConfigWithApiKey(
+        primaryProvider.settingsConfig,
+        activeApp,
+        dashboardApiKeyDraft,
+        typeof primaryProvider.meta?.apiKeyField === "string"
+          ? primaryProvider.meta.apiKeyField
+          : undefined,
+      );
+      await updateProvider(
+        { ...primaryProvider, settingsConfig: nextConfig },
+        primaryProvider.id,
+      );
+      await queryClient.invalidateQueries({ queryKey: ["providers", activeApp] });
+      toast.success(
+        t("provider.apiKeySaved", { defaultValue: "API Key 已保存" }),
+        { duration: 2500 },
+      );
+    } catch (e) {
+      toast.error(
+        t("provider.apiKeySaveFailed", {
+          defaultValue: "保存失败：{{error}}",
+          error: extractErrorMessage(e),
+        }),
+      );
+    }
+  }, [
+    primaryProvider,
+    showDashboardApiKey,
+    dashboardApiKeyDraft,
+    persistedDashboardApiKey,
+    activeApp,
+    updateProvider,
+    queryClient,
+    t,
+  ]);
+
   const notifyWindowControlError = (error: unknown) => {
     toast.error(
       t("notifications.windowControlFailed", {
@@ -905,20 +1013,100 @@ function App() {
                         </div>
 
                         <div className="rounded-xl border border-border/80 bg-card px-4 py-4">
-                          <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-3">
-                            <div className="text-xs font-medium text-muted-foreground">
-                              {t("provider.modelLabel", { defaultValue: "模型" })}
-                            </div>
-                            <div className="flex justify-end">
-                              {primaryProvider ? (
-                                <ManagedModelSelector
-                                  appId={activeApp}
-                                  providerId={primaryProvider.id}
-                                  hideLabel
-                                  className="min-w-[260px]"
-                                />
-                              ) : null}
-                            </div>
+                          <div className="grid grid-cols-[auto_1fr] items-start gap-x-4 gap-y-3">
+                            {showDashboardApiKey && primaryProvider ? (
+                              <div className="col-span-2 flex w-full min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:gap-6">
+                                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                                  <label
+                                    htmlFor="dashboard-api-key"
+                                    className="text-xs font-medium text-muted-foreground"
+                                  >
+                                    {t("provider.apiKeyLabel", {
+                                      defaultValue: "API Key",
+                                    })}
+                                  </label>
+                                  <div className="relative w-full max-w-full sm:max-w-[min(100%,360px)]">
+                                    <Input
+                                      id="dashboard-api-key"
+                                      type={
+                                        dashboardApiKeyVisible
+                                          ? "text"
+                                          : "password"
+                                      }
+                                      name="dashboard-api-key"
+                                      autoComplete="off"
+                                      spellCheck={false}
+                                      placeholder={t("apiKeyInput.placeholder")}
+                                      className="h-9 w-full pr-10 font-mono text-xs"
+                                      value={dashboardApiKeyDraft}
+                                      onChange={(e) =>
+                                        setDashboardApiKeyDraft(e.target.value)
+                                      }
+                                      onBlur={() => {
+                                        void flushDashboardApiKey();
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          e.currentTarget.blur();
+                                        }
+                                      }}
+                                    />
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="absolute right-0 top-0 h-9 px-3 hover:bg-transparent"
+                                      tabIndex={-1}
+                                      aria-label={
+                                        dashboardApiKeyVisible
+                                          ? t("apiKeyInput.hide")
+                                          : t("apiKeyInput.show")
+                                      }
+                                      onClick={() =>
+                                        setDashboardApiKeyVisible((v) => !v)
+                                      }
+                                    >
+                                      {dashboardApiKeyVisible ? (
+                                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                                      ) : (
+                                        <Eye className="h-4 w-4 text-muted-foreground" />
+                                      )}
+                                    </Button>
+                                  </div>
+                                </div>
+                                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                                  <span className="text-xs font-medium text-muted-foreground">
+                                    {t("provider.modelLabel", {
+                                      defaultValue: "模型",
+                                    })}
+                                  </span>
+                                  <ManagedModelSelector
+                                    appId={activeApp}
+                                    providerId={primaryProvider.id}
+                                    hideLabel
+                                    className="w-full min-w-[200px] sm:w-auto sm:max-w-[min(100%,360px)]"
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="pt-2 text-xs font-medium text-muted-foreground">
+                                  {t("provider.modelLabel", {
+                                    defaultValue: "模型",
+                                  })}
+                                </div>
+                                <div className="flex w-full min-w-0 flex-col items-stretch justify-end gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                                  {primaryProvider ? (
+                                    <ManagedModelSelector
+                                      appId={activeApp}
+                                      providerId={primaryProvider.id}
+                                      hideLabel
+                                      className="w-full min-w-[200px] sm:max-w-[min(100%,360px)] sm:w-auto"
+                                    />
+                                  ) : null}
+                                </div>
+                              </>
+                            )}
 
                             <div className="text-xs font-medium text-muted-foreground">
                               {t("provider.actions", { defaultValue: "操作" })}
