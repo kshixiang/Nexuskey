@@ -40,7 +40,9 @@
     "deleting": "削除中...",
     "auto": "自動",
     "enabled": "有効",
-    "notSet": "未設定"
+    "notSet": "未設定",
+    "recharge": "チャージ",
+    "openInBrowser": "ブラウザで開く"
   },
   "firstRunNotice": {
     "title": "NexusKey へようこそ",
@@ -588,12 +590,15 @@
     "openclawConfigDirDescription": "OpenClaw の設定ディレクトリ（openclaw.json）を上書きします。",
     "hermesConfigDir": "Hermes 設定ディレクトリ",
     "hermesConfigDirDescription": "Hermes の設定ディレクトリ（config.yaml）を上書きします。",
+    "cursorConfigDir": "Cursor 設定ディレクトリ",
+    "cursorConfigDirDescription": "Cursor の設定ディレクトリ（通常は ~/.cursor）を上書きします。",
     "browsePlaceholderClaude": "例: /home/<your-username>/.claude",
     "browsePlaceholderCodex": "例: /home/<your-username>/.codex",
     "browsePlaceholderGemini": "例: /home/<your-username>/.gemini",
     "browsePlaceholderOpencode": "例: /home/<your-username>/.config/opencode",
     "browsePlaceholderOpenclaw": "例: /home/<your-username>/.openclaw",
     "browsePlaceholderHermes": "例: /home/<your-username>/.hermes",
+    "browsePlaceholderCursor": "例: /home/<your-username>/.cursor",
     "browseDirectory": "ディレクトリを選択",
     "resetDefault": "デフォルトに戻す（保存後に反映）",
     "checkForUpdates": "アップデートを確認",
@@ -669,7 +674,22 @@
     "gemini": "Gemini",
     "opencode": "OpenCode",
     "openclaw": "OpenClaw",
-    "hermes": "Hermes"
+    "hermes": "Hermes",
+    "cursor": "Cursor"
+  },
+  "cursorManual": {
+    "title": "Cursor から Nexuskey プロキシを使う",
+    "intro": "Cursor の API キーとセッションはアプリ側の安全な領域に保存され、Nexuskey から直接書き込むことはできません。次の手順でローカルの Nexuskey プロキシ（OpenAI 互換）を手動で指定してください。",
+    "step1Title": "Nexuskey プロキシを起動",
+    "step1Body": "Nexuskey でローカルプロキシを有効にし、待ち受けアドレスとポート（例: 127.0.0.1 と既定ポート）を確認します。",
+    "step2Title": "OpenAI Base URL を設定",
+    "step2Body": "Cursor の設定で、OpenAI 互換の Base URL を下記に設定します（プロキシ稼働中にコピー）。設定パスはバージョンにより異なります（例: Settings → Models / Beta → OpenAI API Key や Override OpenAI Base URL）。",
+    "step3Title": "保存して確認",
+    "step3Body": "保存後、チャットや Tab 補完で Nexuskey 経由になり TLS エラーがないことを確認します。",
+    "proxyOfflineHint": "プロキシが起動していません。Base URL をコピーする前に Nexuskey プロキシを起動してください。",
+    "proxyUrlCopied": "プロキシの Base URL をコピーしました",
+    "note": "公式ログインとカスタム Base URL の併用は Cursor の仕様に依存します。公式ドキュメントを参照し、秘密情報をリポジトリに含めないでください。",
+    "docsLink": "Cursor 公式ドキュメント（API キーと設定）"
   },
   "sessionManager": {
     "title": "セッション管理",
@@ -1334,7 +1354,8 @@
         "gemini": "Gemini",
         "opencode": "OpenCode",
         "openclaw": "OpenClaw",
-        "hermes": "Hermes"
+        "hermes": "Hermes",
+        "cursor": "Cursor"
       }
     },
     "userLevelPath": "ユーザーレベルの MCP パス",

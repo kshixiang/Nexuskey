@@ -105,6 +105,7 @@ let mcpConfigs: McpConfigState = {
         opencode: false,
         openclaw: false,
         hermes: false,
+        cursor: false,
       },
       server: {
         type: "stdio",
@@ -124,6 +125,7 @@ let mcpConfigs: McpConfigState = {
         opencode: false,
         openclaw: false,
         hermes: false,
+        cursor: false,
       },
       server: {
         type: "http",
@@ -135,6 +137,7 @@ let mcpConfigs: McpConfigState = {
   opencode: {},
   openclaw: {},
   hermes: {},
+  cursor: {},
 };
 
 const cloneProviders = (value: ProvidersByApp) =>
@@ -169,6 +172,7 @@ export const resetProviderState = () => {
           opencode: false,
           openclaw: false,
           hermes: false,
+          cursor: false,
         },
         server: {
           type: "stdio",
@@ -188,6 +192,7 @@ export const resetProviderState = () => {
           opencode: false,
           openclaw: false,
           hermes: false,
+          cursor: false,
         },
         server: {
           type: "http",
@@ -199,6 +204,7 @@ export const resetProviderState = () => {
     opencode: {},
     openclaw: {},
     hermes: {},
+    cursor: {},
   };
 };
 

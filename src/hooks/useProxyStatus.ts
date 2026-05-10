@@ -190,6 +190,8 @@ export function useProxyStatus() {
       takeoverStatus?.claude ||
       takeoverStatus?.codex ||
       takeoverStatus?.gemini ||
+      takeoverStatus?.hermes ||
+      takeoverStatus?.cursor ||
       false,
 
     // 启动/停止（总开关）

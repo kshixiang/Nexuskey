@@ -9,8 +9,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tauri::AppHandle;
+use tauri::Manager;
 use tauri::State;
+use tauri::webview::WebviewWindowBuilder;
 use tauri_plugin_opener::OpenerExt;
+use tauri_utils::config::WebviewUrl;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -32,6 +35,40 @@ pub async fn open_external(app: AppHandle, url: String) -> Result<bool, String> 
         .map_err(|e| format!("打开链接失败: {e}"))?;
 
     Ok(true)
+}
+
+/// 在应用内新开 Webview 窗口加载 HTTPS 页面（充值店铺等）；重复调用会复用同标签窗口并导航。
+#[tauri::command]
+pub async fn open_embedded_external(app: AppHandle, url: String) -> Result<(), String> {
+    let url_str = if url.starts_with("http://") || url.starts_with("https://") {
+        url
+    } else {
+        format!("https://{url}")
+    };
+
+    let parsed = url::Url::parse(&url_str).map_err(|e| format!("无效的 URL: {e}"))?;
+
+    const LABEL: &str = "embedded_external";
+
+    if let Some(w) = app.get_webview_window(LABEL) {
+        w.navigate(parsed.clone())
+            .map_err(|e| format!("加载页面失败: {e}"))?;
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+        return Ok(());
+    }
+
+    WebviewWindowBuilder::new(&app, LABEL, WebviewUrl::External(parsed))
+        .title("充值")
+        .inner_size(960.0, 720.0)
+        .min_inner_size(420.0, 360.0)
+        .center()
+        .resizable(true)
+        .build()
+        .map_err(|e| format!("创建窗口失败: {e}"))?;
+
+    Ok(())
 }
 
 #[tauri::command]

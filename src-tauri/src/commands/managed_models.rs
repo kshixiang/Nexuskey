@@ -39,6 +39,7 @@ fn get_provider_for_app(state: &AppState, app_type: &AppType) -> Result<crate::p
         AppType::OpenCode => managed.opencode.as_ref().map(|v| v.id.clone()),
         AppType::OpenClaw => managed.openclaw.as_ref().map(|v| v.id.clone()),
         AppType::Hermes => managed.hermes.as_ref().map(|v| v.id.clone()),
+        AppType::Cursor => managed.cursor.as_ref().map(|v| v.id.clone()),
     }
     .ok_or_else(|| AppError::Message(format!("No managed provider configured for {}", app_type.as_str())))?;
 
@@ -59,6 +60,7 @@ fn get_config_entry(
         AppType::OpenCode => managed.opencode,
         AppType::OpenClaw => managed.openclaw,
         AppType::Hermes => managed.hermes,
+        AppType::Cursor => managed.cursor,
     }
     .ok_or_else(|| AppError::Message(format!("No managed provider configured for {}", app_type.as_str())))
 }
@@ -250,6 +252,33 @@ fn extract_model_state(app_type: &AppType, provider: &crate::provider::Provider)
                 options,
             }
         }
+        AppType::Cursor => {
+            let current = provider
+                .settings_config
+                .get("config")
+                .and_then(|v| v.as_str())
+                .and_then(|config| {
+                    let table = toml::from_str::<toml::Table>(config).ok()?;
+                    table
+                        .get("model")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                });
+
+            let mut options = Vec::new();
+            if let Some(model) = current.clone() {
+                options.push(ManagedModelOption {
+                    id: model,
+                    name: None,
+                });
+            }
+
+            ManagedModelState {
+                provider_id: provider.id.clone(),
+                selected_model: current,
+                options,
+            }
+        }
     }
 }
 
@@ -374,11 +403,20 @@ pub fn set_managed_model(
         AppType::Hermes => {
             update_hermes_model(&provider.id, &provider, &model).map_err(|e| e.to_string())?;
         }
+        AppType::Cursor => {
+            let config_text = updated_settings
+                .get("config")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let next = crate::codex_config::update_codex_toml_field(config_text, "model", &model)
+                .map_err(|e| e.to_string())?;
+            updated_settings["config"] = Value::String(next);
+        }
     }
 
     if matches!(
         app_type,
-        AppType::Claude | AppType::Codex | AppType::Gemini | AppType::OpenCode
+        AppType::Claude | AppType::Codex | AppType::Gemini | AppType::OpenCode | AppType::Cursor
     ) {
         state
             .db

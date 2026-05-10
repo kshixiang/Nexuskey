@@ -16,6 +16,7 @@ const ALL_APPS: AppId[] = [
   "opencode",
   "openclaw",
   "hermes",
+  "cursor",
 ];
 const STORAGE_KEY = "nexuskey-last-app";
 
@@ -37,6 +38,7 @@ export function AppSwitcher({
     opencode: "opencode",
     openclaw: "openclaw",
     hermes: "hermes",
+    cursor: "openai",
   };
   const appDisplayName: Record<AppId, string> = {
     claude: "Claude",
@@ -45,6 +47,7 @@ export function AppSwitcher({
     opencode: "OpenCode",
     openclaw: "OpenClaw",
     hermes: "Hermes",
+    cursor: "Cursor",
   };
 
   // Filter apps based on visibility settings (default all visible)

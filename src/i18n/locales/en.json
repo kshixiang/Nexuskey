@@ -40,7 +40,9 @@
     "deleting": "Deleting...",
     "auto": "Auto",
     "enabled": "Enabled",
-    "notSet": "Not Set"
+    "notSet": "Not Set",
+    "recharge": "Top up",
+    "openInBrowser": "Open in system browser"
   },
   "firstRunNotice": {
     "title": "Welcome to NexusKey",
@@ -588,12 +590,15 @@
     "openclawConfigDirDescription": "Override OpenClaw configuration directory (openclaw.json).",
     "hermesConfigDir": "Hermes Configuration Directory",
     "hermesConfigDirDescription": "Override Hermes configuration directory (config.yaml).",
+    "cursorConfigDir": "Cursor Configuration Directory",
+    "cursorConfigDirDescription": "Override Cursor configuration directory (typically ~/.cursor).",
     "browsePlaceholderClaude": "e.g., /home/<your-username>/.claude",
     "browsePlaceholderCodex": "e.g., /home/<your-username>/.codex",
     "browsePlaceholderGemini": "e.g., /home/<your-username>/.gemini",
     "browsePlaceholderOpencode": "e.g., /home/<your-username>/.config/opencode",
     "browsePlaceholderOpenclaw": "e.g., /home/<your-username>/.openclaw",
     "browsePlaceholderHermes": "e.g., /home/<your-username>/.hermes",
+    "browsePlaceholderCursor": "e.g., /home/<your-username>/.cursor",
     "browseDirectory": "Browse Directory",
     "resetDefault": "Reset to default directory (takes effect after saving)",
     "checkForUpdates": "Check for Updates",
@@ -669,7 +674,22 @@
     "gemini": "Gemini",
     "opencode": "OpenCode",
     "openclaw": "OpenClaw",
-    "hermes": "Hermes"
+    "hermes": "Hermes",
+    "cursor": "Cursor"
+  },
+  "cursorManual": {
+    "title": "Use Nexuskey proxy from Cursor",
+    "intro": "Cursor keeps API keys and session data in its own secure storage; Nexuskey cannot write them for you. Follow these steps to point Cursor at the local Nexuskey proxy (OpenAI-compatible).",
+    "step1Title": "Start the Nexuskey proxy",
+    "step1Body": "Enable the local proxy in Nexuskey and note the listen address and port (for example 127.0.0.1 and the default port).",
+    "step2Title": "Set the OpenAI Base URL",
+    "step2Body": "In Cursor settings, set the OpenAI-compatible Base URL to the value below (copy when the proxy is running). The exact path depends on your Cursor version—typically Settings → Models / Beta → OpenAI API Key or Override OpenAI Base URL.",
+    "step3Title": "Save and verify",
+    "step3Body": "Save settings, then try chat or Tab completion in Cursor and confirm traffic goes through Nexuskey without TLS errors.",
+    "proxyOfflineHint": "Proxy is not running. Start the Nexuskey proxy before copying the Base URL.",
+    "proxyUrlCopied": "Proxy Base URL copied",
+    "note": "If you use Cursor’s official sign-in, coexistence with a custom Base URL may depend on Cursor’s policy; refer to Cursor’s docs. Never commit secrets to source control.",
+    "docsLink": "Cursor docs: API keys and settings"
   },
   "sessionManager": {
     "title": "Session Manager",
@@ -1334,7 +1354,8 @@
         "gemini": "Gemini",
         "opencode": "OpenCode",
         "openclaw": "OpenClaw",
-        "hermes": "Hermes"
+        "hermes": "Hermes",
+        "cursor": "Cursor"
       }
     },
     "userLevelPath": "User-level MCP path",

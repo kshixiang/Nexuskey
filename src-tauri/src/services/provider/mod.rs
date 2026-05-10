@@ -1734,6 +1734,7 @@ impl ProviderService {
             AppType::OpenCode => Self::extract_opencode_common_config(&provider.settings_config),
             AppType::OpenClaw => Self::extract_openclaw_common_config(&provider.settings_config),
             AppType::Hermes => Ok(String::new()), // Hermes doesn't use common config snippets
+            AppType::Cursor => Ok(String::new()),
         }
     }
 
@@ -1749,6 +1750,7 @@ impl ProviderService {
             AppType::OpenCode => Self::extract_opencode_common_config(settings_config),
             AppType::OpenClaw => Self::extract_openclaw_common_config(settings_config),
             AppType::Hermes => Ok(String::new()), // Hermes doesn't use common config snippets
+            AppType::Cursor => Ok(String::new()),
         }
     }
 
@@ -2124,6 +2126,15 @@ impl ProviderService {
                     ));
                 }
             }
+            AppType::Cursor => {
+                if !provider.settings_config.is_object() {
+                    return Err(AppError::localized(
+                        "provider.cursor.settings.not_object",
+                        "Cursor 配置必须是 JSON 对象",
+                        "Cursor configuration must be a JSON object",
+                    ));
+                }
+            }
         }
 
         // Validate and clean UsageScript configuration (common for all app types)
@@ -2295,8 +2306,8 @@ impl ProviderService {
 
                 Ok((api_key, base_url))
             }
-            AppType::OpenClaw | AppType::Hermes => {
-                // OpenClaw/Hermes use apiKey and baseUrl directly on the object
+            AppType::OpenClaw | AppType::Hermes | AppType::Cursor => {
+                // OpenClaw/Hermes/Cursor use apiKey and baseUrl directly on the object
                 let api_key = provider
                     .settings_config
                     .get("apiKey")

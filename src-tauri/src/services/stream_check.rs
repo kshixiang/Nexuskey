@@ -274,6 +274,18 @@ impl StreamCheckService {
                 )
                 .await
             }
+            AppType::Cursor => {
+                Self::check_codex_stream(
+                    &client,
+                    &base_url,
+                    &auth,
+                    &model_to_test,
+                    test_prompt,
+                    request_timeout,
+                    provider,
+                )
+                .await
+            }
             AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => {
                 // Already handled via early dispatch above
                 unreachable!("OpenCode/OpenClaw/Hermes 已通过 check_once_without_adapter 处理")
@@ -1377,6 +1389,9 @@ impl StreamCheckService {
                 // OpenClaw/Hermes use models array in settings_config
                 // Try to extract first model from the models array
                 Self::extract_openclaw_model(provider).unwrap_or_else(|| "gpt-4o".to_string())
+            }
+            AppType::Cursor => {
+                Self::extract_codex_model(provider).unwrap_or_else(|| config.codex_model.clone())
             }
         }
     }

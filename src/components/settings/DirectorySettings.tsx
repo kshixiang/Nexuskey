@@ -18,6 +18,7 @@ interface DirectorySettingsProps {
   opencodeDir?: string;
   openclawDir?: string;
   hermesDir?: string;
+  cursorDir?: string;
   onDirectoryChange: (app: AppId, value?: string) => void;
   onBrowseDirectory: (app: AppId) => Promise<void>;
   onResetDirectory: (app: AppId) => Promise<void>;
@@ -35,6 +36,7 @@ export function DirectorySettings({
   opencodeDir,
   openclawDir,
   hermesDir,
+  cursorDir,
   onDirectoryChange,
   onBrowseDirectory,
   onResetDirectory,
@@ -155,6 +157,17 @@ export function DirectorySettings({
           onChange={(val) => onDirectoryChange("hermes", val)}
           onBrowse={() => onBrowseDirectory("hermes")}
           onReset={() => onResetDirectory("hermes")}
+        />
+
+        <DirectoryInput
+          label={t("settings.cursorConfigDir")}
+          description={undefined}
+          value={cursorDir}
+          resolvedValue={resolvedDirs.cursor}
+          placeholder={t("settings.browsePlaceholderCursor")}
+          onChange={(val) => onDirectoryChange("cursor", val)}
+          onBrowse={() => onBrowseDirectory("cursor")}
+          onReset={() => onResetDirectory("cursor")}
         />
       </section>
     </div>

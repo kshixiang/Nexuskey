@@ -40,7 +40,9 @@
     "deleting": "删除中...",
     "auto": "自动",
     "enabled": "已开启",
-    "notSet": "未设置"
+    "notSet": "未设置",
+    "recharge": "充值",
+    "openInBrowser": "在系统浏览器中打开"
   },
   "firstRunNotice": {
     "title": "欢迎使用 NexusKey",
@@ -588,12 +590,15 @@
     "openclawConfigDirDescription": "覆盖 OpenClaw 配置目录 (openclaw.json)。",
     "hermesConfigDir": "Hermes 配置目录",
     "hermesConfigDirDescription": "覆盖 Hermes 配置目录 (config.yaml)。",
+    "cursorConfigDir": "Cursor 配置目录",
+    "cursorConfigDirDescription": "覆盖 Cursor 配置目录（通常为 ~/.cursor）。",
     "browsePlaceholderClaude": "例如：/home/<你的用户名>/.claude",
     "browsePlaceholderCodex": "例如：/home/<你的用户名>/.codex",
     "browsePlaceholderGemini": "例如：/home/<你的用户名>/.gemini",
     "browsePlaceholderOpencode": "例如：/home/<你的用户名>/.config/opencode",
     "browsePlaceholderOpenclaw": "例如：/home/<你的用户名>/.openclaw",
     "browsePlaceholderHermes": "例如：/home/<你的用户名>/.hermes",
+    "browsePlaceholderCursor": "例如：/home/<你的用户名>/.cursor",
     "browseDirectory": "浏览目录",
     "resetDefault": "恢复默认目录（需保存后生效）",
     "checkForUpdates": "检查更新",
@@ -669,7 +674,22 @@
     "gemini": "Gemini",
     "opencode": "OpenCode",
     "openclaw": "OpenClaw",
-    "hermes": "Hermes"
+    "hermes": "Hermes",
+    "cursor": "Cursor"
+  },
+  "cursorManual": {
+    "title": "在 Cursor 中使用 Nexuskey 代理",
+    "intro": "Cursor 的 API Key 与会话数据保存在应用自身的安全存储中，Nexuskey 无法代为写入。你可按下述步骤在本机手动指向 Nexuskey 本地代理（OpenAI 兼容）。",
+    "step1Title": "启动 Nexuskey 代理",
+    "step1Body": "在 Nexuskey 中开启本地代理服务，并记下监听地址与端口（例如 127.0.0.1 与默认端口）。",
+    "step2Title": "填写 OpenAI Base URL",
+    "step2Body": "在 Cursor 设置中将自定义 OpenAI 兼容接口的 Base URL 设为下方地址（代理在线时可用一键复制）。路径通常为 Settings → Models（或 Beta）→ OpenAI API Key / Override OpenAI Base URL，以你安装的 Cursor 版本为准。",
+    "step3Title": "保存并验证",
+    "step3Body": "保存设置后在 Cursor 中发起一次对话或补全，确认请求经 Nexuskey 代理转发且无 TLS 错误。",
+    "proxyOfflineHint": "当前代理未运行，请先启动 Nexuskey 代理后再复制 Base URL。",
+    "proxyUrlCopied": "已复制代理 Base URL",
+    "note": "若你在 Cursor 中使用官方账号登录，可能与自定义 Base URL 并存策略有关；请以 Cursor 文档为准。密钥请勿提交到仓库。",
+    "docsLink": "Cursor 官方文档：API Keys 与设置"
   },
   "sessionManager": {
     "title": "会话管理",
@@ -1334,7 +1354,8 @@
         "gemini": "Gemini",
         "opencode": "OpenCode",
         "openclaw": "OpenClaw",
-        "hermes": "Hermes"
+        "hermes": "Hermes",
+        "cursor": "Cursor"
       }
     },
     "userLevelPath": "用户级 MCP 配置路径",

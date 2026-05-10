@@ -46,6 +46,7 @@ pub(crate) fn provider_exists_in_live_config(
             .map(|providers| providers.contains_key(provider_id)),
         AppType::Hermes => crate::hermes_config::get_providers()
             .map(|providers| providers.contains_key(provider_id)),
+        AppType::Cursor => Ok(false),
         _ => Ok(false),
     }
 }
@@ -349,7 +350,7 @@ fn settings_contain_common_config(app_type: &AppType, settings: &Value, snippet:
             }
             _ => false,
         },
-        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => false,
+        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Cursor => false,
     }
 }
 
@@ -419,7 +420,9 @@ pub(crate) fn remove_common_config_from_settings(
             }
             Ok(result)
         }
-        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => Ok(settings.clone()),
+        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Cursor => {
+            Ok(settings.clone())
+        }
     }
 }
 
@@ -474,7 +477,9 @@ fn apply_common_config_to_settings(
             }
             Ok(result)
         }
-        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => Ok(settings.clone()),
+        AppType::OpenCode | AppType::OpenClaw | AppType::Hermes | AppType::Cursor => {
+            Ok(settings.clone())
+        }
     }
 }
 
@@ -821,6 +826,12 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
             crate::hermes_config::set_provider(&provider.id, provider.settings_config.clone())?;
             log::debug!("Hermes provider '{}' written to live config", provider.id);
         }
+        AppType::Cursor => {
+            log::debug!(
+                "Cursor IDE stores API keys outside NexusKey-managed files; skipping live write for provider '{}'",
+                provider.id
+            );
+        }
     }
     Ok(())
 }
@@ -1029,6 +1040,11 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
             let config = crate::hermes_config::yaml_to_json(&yaml_config)?;
             Ok(config)
         }
+        AppType::Cursor => Err(AppError::localized(
+            "cursor.live.not_managed",
+            "Cursor 不在此接管 Live 配置（请在 Cursor 应用内手动填写）",
+            "Cursor live configuration is not managed here (configure manually in Cursor)",
+        )),
     }
 }
 
@@ -1040,6 +1056,10 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
     // Additive mode apps (OpenCode, OpenClaw) should use their dedicated
     // import_xxx_providers_from_live functions, not this generic default config import
     if app_type.is_additive_mode() {
+        return Ok(false);
+    }
+
+    if matches!(app_type, AppType::Cursor) {
         return Ok(false);
     }
 
@@ -1115,6 +1135,7 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
         AppType::OpenCode | AppType::OpenClaw | AppType::Hermes => {
             unreachable!("additive mode apps are handled by early return")
         }
+        AppType::Cursor => unreachable!("cursor is handled by early return"),
     };
 
     let mut provider = Provider::with_id(

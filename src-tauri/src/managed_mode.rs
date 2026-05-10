@@ -100,6 +100,8 @@ pub struct ManagedProvidersConfig {
     pub openclaw: Option<ManagedProviderEntry>,
     #[serde(default)]
     pub hermes: Option<ManagedProviderEntry>,
+    #[serde(default)]
+    pub cursor: Option<ManagedProviderEntry>,
 }
 
 #[derive(Clone)]
@@ -170,6 +172,7 @@ fn entry_mut<'a>(
         AppType::OpenCode => config.opencode.as_mut(),
         AppType::OpenClaw => config.openclaw.as_mut(),
         AppType::Hermes => config.hermes.as_mut(),
+        AppType::Cursor => config.cursor.as_mut(),
     }
 }
 
@@ -252,6 +255,16 @@ pub fn update_selected_model(app_type: &AppType, model: &str) -> Result<(), AppE
                 base_url,
             });
         }
+        AppType::Cursor => {
+            let config_text = entry
+                .settings_config
+                .get("config")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let next = crate::codex_config::update_codex_toml_field(config_text, "model", model)
+                .map_err(AppError::Config)?;
+            entry.settings_config["config"] = Value::String(next);
+        }
     }
 
     save_managed_config(&config)
@@ -323,6 +336,13 @@ pub fn managed_provider_seeds() -> Result<Vec<ManagedProviderSeed>, AppError> {
     if let Some(entry) = config.hermes {
         seeds.push(ManagedProviderSeed {
             app_type: AppType::Hermes,
+            provider: provider_from_entry(entry.clone()),
+            set_current: entry.set_current,
+        });
+    }
+    if let Some(entry) = config.cursor {
+        seeds.push(ManagedProviderSeed {
+            app_type: AppType::Cursor,
             provider: provider_from_entry(entry.clone()),
             set_current: entry.set_current,
         });

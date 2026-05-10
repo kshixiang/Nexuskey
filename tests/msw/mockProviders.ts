@@ -201,6 +201,23 @@ export function createMockProviderBundle(): {
         createdAt: t0,
       },
     },
+    cursor: {
+      "mock-cursor-1": {
+        id: "mock-cursor-1",
+        name: "Mock Cursor / OpenAI-compat",
+        websiteUrl: "https://example.com/cursor",
+        icon: "openai",
+        iconColor: "#38BDF8",
+        category: "third_party",
+        notes: "Mock：手动配置场景占位",
+        settingsConfig: {
+          apiKey: "sk-mock-cursor",
+          baseUrl: "https://api.example.com/v1",
+        },
+        sortIndex: 0,
+        createdAt: t0,
+      },
+    },
   };
 
   const current: CurrentProviderState = {
@@ -210,6 +227,7 @@ export function createMockProviderBundle(): {
     opencode: "mock-opencode-1",
     openclaw: "mock-openclaw-1",
     hermes: "mock-hermes-1",
+    cursor: "mock-cursor-1",
   };
 
   const liveProviderIds: LiveProviderIdsByApp = {

@@ -19,6 +19,7 @@ import {
   Power,
   Eye,
   EyeOff,
+  Wallet,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Provider, VisibleApps } from "@/types";
@@ -26,6 +27,7 @@ import type { EnvConflict } from "@/types/env";
 import { useProvidersQuery, useSettingsQuery } from "@/lib/query";
 import {
   providersApi,
+  settingsApi,
   type AppId,
   type ProviderSwitchEvent,
 } from "@/lib/api";
@@ -69,6 +71,7 @@ import { SkillsPage } from "@/components/skills/SkillsPage";
 import UnifiedSkillsPanel from "@/components/skills/UnifiedSkillsPanel";
 import { DeepLinkImportDialog } from "@/components/DeepLinkImportDialog";
 import { FirstRunNoticeDialog } from "@/components/FirstRunNoticeDialog";
+import { CursorManualPanel } from "@/components/cursor/CursorManualPanel";
 import { AgentsPanel } from "@/components/agents/AgentsPanel";
 import { UniversalProviderPanel } from "@/components/universal";
 import { Button } from "@/components/ui/button";
@@ -81,6 +84,7 @@ import AgentsDefaultsPanel from "@/components/openclaw/AgentsDefaultsPanel";
 import OpenClawHealthBanner from "@/components/openclaw/OpenClawHealthBanner";
 import HermesMemoryPanel from "@/components/hermes/HermesMemoryPanel";
 import {
+  getManagedRechargeUrl,
   isManagedModeEnabled,
   MANAGED_APP_TITLE,
 } from "@/config/managedMode";
@@ -172,6 +176,7 @@ const VALID_APPS: AppId[] = [
   "opencode",
   "openclaw",
   "hermes",
+  "cursor",
 ];
 
 const getInitialApp = (): AppId => {
@@ -212,16 +217,24 @@ function App() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const managedMode = isManagedModeEnabled();
+  const managedRechargeUrl = managedMode ? getManagedRechargeUrl() : null;
 
   const [activeApp, setActiveApp] = useState<AppId>(getInitialApp);
   const [currentView, setCurrentView] = useState<View>(getInitialView);
   const [settingsDefaultTab, setSettingsDefaultTab] = useState("general");
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+  /** 托管主页：在请求日志区域 iframe 嵌入充值页（顶栏按钮触发） */
+  const [showManagedRechargeEmbed, setShowManagedRechargeEmbed] =
+    useState(false);
 
   useEffect(() => {
     localStorage.setItem(VIEW_STORAGE_KEY, currentView);
   }, [currentView]);
+
+  useEffect(() => {
+    setShowManagedRechargeEmbed(false);
+  }, [currentView, activeApp]);
 
   const { data: settingsData } = useSettingsQuery();
   const useAppWindowControls =
@@ -235,6 +248,7 @@ function App() {
     opencode: true,
     openclaw: true,
     hermes: true,
+    cursor: true,
   };
 
   const getFirstVisibleApp = (): AppId => {
@@ -244,6 +258,7 @@ function App() {
     if (visibleApps.opencode) return "opencode";
     if (visibleApps.openclaw) return "openclaw";
     if (visibleApps.hermes) return "hermes";
+    if (visibleApps.cursor) return "cursor";
     return "claude"; // fallback
   };
 
@@ -951,6 +966,22 @@ function App() {
         case "openclawAgents":
           return <AgentsDefaultsPanel />;
         default:
+          if (activeApp === "cursor") {
+            return (
+              <div className="flex flex-1 min-h-0 overflow-hidden bg-background">
+                <AppSwitcher
+                  activeApp={activeApp}
+                  onSwitch={setActiveApp}
+                  visibleApps={visibleApps}
+                />
+                <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                  <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-3 pt-4 sm:px-6 sm:pb-4 sm:pt-5">
+                    <CursorManualPanel />
+                  </div>
+                </div>
+              </div>
+            );
+          }
           return (
             <div className="flex flex-1 min-h-0 overflow-hidden bg-background">
               <AppSwitcher
@@ -959,6 +990,50 @@ function App() {
                 visibleApps={visibleApps}
               />
               <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                {showManagedRechargeEmbed &&
+                managedRechargeUrl &&
+                managedMode ? (
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+                    <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2.5 sm:px-6">
+                      <span className="text-sm font-medium">
+                        {t("common.recharge")}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={async () => {
+                            try {
+                              await settingsApi.openExternal(managedRechargeUrl);
+                            } catch (e) {
+                              toast.error(
+                                `${t("notifications.openLinkFailed")}: ${extractErrorMessage(e)}`,
+                              );
+                            }
+                          }}
+                        >
+                          {t("common.openInBrowser")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8"
+                          onClick={() => setShowManagedRechargeEmbed(false)}
+                        >
+                          {t("common.back")}
+                        </Button>
+                      </div>
+                    </div>
+                    <iframe
+                      src={managedRechargeUrl}
+                      title={t("common.recharge")}
+                      className="min-h-0 w-full flex-1 border-0 bg-background"
+                    />
+                  </div>
+                ) : (
                 <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-3 pt-4 sm:px-6 sm:pb-4 sm:pt-5">
                   <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col xl:max-w-5xl">
                   <div key={activeApp} className="flex min-h-0 flex-1 flex-col gap-5">
@@ -1176,6 +1251,7 @@ function App() {
                   </div>
                   </div>
                 </div>
+                )}
               </div>
             </div>
           );
@@ -1360,6 +1436,20 @@ function App() {
                     setCurrentView("settings");
                   }}
                 />
+                {managedRechargeUrl ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 shrink-0 gap-1 rounded-lg px-2 sm:px-3"
+                    title={t("common.recharge")}
+                    onClick={() => setShowManagedRechargeEmbed(true)}
+                  >
+                    <Wallet className="h-4 w-4 shrink-0" aria-hidden />
+                    <span className="hidden sm:inline">
+                      {t("common.recharge")}
+                    </span>
+                  </Button>
+                ) : null}
                 {isCurrentAppTakeoverActive && (
                   <Button
                     variant="ghost"
@@ -1462,7 +1552,7 @@ function App() {
                   {t("prompts.add")}
                 </Button>
               )}
-              {currentView === "providers" && (
+              {currentView === "providers" && activeApp !== "cursor" && (
                 <>
                   {!managedMode && (
                     <Button

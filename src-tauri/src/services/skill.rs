@@ -535,6 +535,11 @@ impl SkillService {
                     return Ok(custom.join("skills"));
                 }
             }
+            AppType::Cursor => {
+                if let Some(custom) = crate::settings::get_cursor_override_dir() {
+                    return Ok(custom.join("skills"));
+                }
+            }
         }
 
         // 默认路径：便携模式下跟随 exe 目录，普通模式下回退到用户主目录
@@ -547,6 +552,7 @@ impl SkillService {
             AppType::OpenCode => home.join(".config").join("opencode").join("skills"),
             AppType::OpenClaw => home.join(".openclaw").join("skills"),
             AppType::Hermes => crate::hermes_config::get_hermes_dir().join("skills"),
+            AppType::Cursor => crate::config::get_cursor_dir().join("skills"),
         })
     }
 

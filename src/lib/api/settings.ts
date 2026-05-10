@@ -165,6 +165,20 @@ export const settingsApi = {
     await invoke("open_external", { url });
   },
 
+  /** 应用内 Webview 窗口打开 HTTPS 页面（充值等） */
+  async openEmbeddedExternal(url: string): Promise<void> {
+    try {
+      const u = new URL(url);
+      const scheme = u.protocol.replace(":", "").toLowerCase();
+      if (scheme !== "http" && scheme !== "https") {
+        throw new Error("Unsupported URL scheme");
+      }
+    } catch {
+      throw new Error("Invalid URL");
+    }
+    await invoke("open_embedded_external", { url });
+  },
+
   async setAutoLaunch(enabled: boolean): Promise<boolean> {
     return await invoke("set_auto_launch", { enabled });
   },

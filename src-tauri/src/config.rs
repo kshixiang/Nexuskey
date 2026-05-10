@@ -77,6 +77,15 @@ pub fn get_claude_config_dir() -> PathBuf {
     get_home_dir().join(".claude")
 }
 
+/// Cursor 配置目录（~/.cursor，或 settings 中的覆盖路径）
+pub fn get_cursor_dir() -> PathBuf {
+    if let Some(custom) = crate::settings::get_cursor_override_dir() {
+        return custom;
+    }
+
+    get_home_dir().join(".cursor")
+}
+
 /// 默认 Claude MCP 配置文件路径 (~/.claude.json)
 pub fn get_default_claude_mcp_path() -> PathBuf {
     get_home_dir().join(".claude.json")

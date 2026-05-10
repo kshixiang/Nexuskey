@@ -133,6 +133,9 @@ impl ConfigService {
             AppType::Hermes => {
                 // Hermes uses additive mode, no live sync needed
             }
+            AppType::Cursor => {
+                // Cursor is configured manually in the Cursor app; no Nexuskey live sync
+            }
         }
 
         Ok(())
