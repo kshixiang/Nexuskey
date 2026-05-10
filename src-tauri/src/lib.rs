@@ -1066,6 +1066,7 @@ pub fn run() {
               commands::get_managed_model_state,
               commands::add_provider,
             commands::update_provider,
+            commands::patch_provider_settings_config,
             commands::delete_provider,
             commands::remove_provider_from_live_config,
               commands::switch_provider,

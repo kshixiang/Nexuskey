@@ -802,10 +802,26 @@ function App() {
           ? primaryProvider.meta.apiKeyField
           : undefined,
       );
-      await updateProvider(
-        { ...primaryProvider, settingsConfig: nextConfig },
-        primaryProvider.id,
-      );
+      if (isManagedModeEnabled()) {
+        await providersApi.patchSettingsConfig(
+          primaryProvider.id,
+          nextConfig,
+          activeApp,
+        );
+        try {
+          await providersApi.updateTrayMenu();
+        } catch (trayErr) {
+          console.error(
+            "Failed to update tray menu after dashboard API key save",
+            trayErr,
+          );
+        }
+      } else {
+        await updateProvider(
+          { ...primaryProvider, settingsConfig: nextConfig },
+          primaryProvider.id,
+        );
+      }
       await queryClient.invalidateQueries({ queryKey: ["providers", activeApp] });
       toast.success(
         t("provider.apiKeySaved", { defaultValue: "API Key 已保存" }),

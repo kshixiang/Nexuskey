@@ -66,6 +66,44 @@ pub fn update_provider(
         .map_err(|e| e.to_string())
 }
 
+/// Update `settings_config` only (no add/delete/switch). Used by the dashboard API Key field
+/// when [crate::managed_mode::MANAGED_MODE] blocks full `update_provider` calls.
+#[tauri::command]
+pub fn patch_provider_settings_config(
+    state: State<'_, AppState>,
+    app: String,
+    #[allow(non_snake_case)] providerId: String,
+    #[allow(non_snake_case)] settingsConfig: serde_json::Value,
+) -> Result<(), String> {
+    let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
+
+    let exists = state
+        .db
+        .get_provider_by_id(&providerId, app_type.as_str())
+        .map_err(|e| e.to_string())?;
+    if exists.is_none() {
+        return Err(format!("Provider '{providerId}' not found for app {app}"));
+    }
+
+    state
+        .db
+        .update_provider_settings_config(
+            app_type.as_str(),
+            &providerId,
+            &settingsConfig,
+        )
+        .map_err(|e| e.to_string())?;
+
+    let effective = crate::settings::get_effective_current_provider(&state.db, &app_type)
+        .map_err(|e| e.to_string())?;
+    if effective.as_deref() == Some(providerId.as_str()) {
+        ProviderService::sync_current_provider_for_app(state.inner(), app_type)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub fn delete_provider(
     state: State<'_, AppState>,

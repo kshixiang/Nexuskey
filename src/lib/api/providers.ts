@@ -54,6 +54,19 @@ export const providersApi = {
     });
   },
 
+  /** Settings-only update; allowed in managed relay mode (full `update` is blocked). */
+  async patchSettingsConfig(
+    providerId: string,
+    settingsConfig: Record<string, unknown>,
+    appId: AppId,
+  ): Promise<void> {
+    await invoke("patch_provider_settings_config", {
+      app: appId,
+      providerId,
+      settingsConfig,
+    });
+  },
+
   async delete(id: string, appId: AppId): Promise<boolean> {
     return await invoke("delete_provider", { id, app: appId });
   },
