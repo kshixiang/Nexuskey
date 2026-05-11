@@ -5,6 +5,11 @@ import {
 } from "@/utils/providerConfigUtils";
 import type { ProviderCategory } from "@/types";
 import type { AppId } from "@/lib/api";
+import {
+  normalizeLegacyNexuskeyGatewayUrl,
+  normalizeLegacyNexuskeyInTomlFragment,
+  normalizeNexuskeyAnthropicBaseUrl,
+} from "@/utils/nexuskeyGatewayUrl";
 
 interface UseBaseUrlStateProps {
   appType: AppId;
@@ -42,14 +47,21 @@ export function useBaseUrlState({
     try {
       const config = JSON.parse(settingsConfig || "{}");
       const envUrl: unknown = config?.env?.ANTHROPIC_BASE_URL;
-      const nextUrl = typeof envUrl === "string" ? envUrl.trim() : "";
+      const raw = typeof envUrl === "string" ? envUrl.trim() : "";
+      const nextUrl = raw ? normalizeNexuskeyAnthropicBaseUrl(raw) : "";
+      if (raw && nextUrl !== raw) {
+        if (!config.env) config.env = {};
+        config.env.ANTHROPIC_BASE_URL = nextUrl;
+        onSettingsConfigChange(JSON.stringify(config, null, 2));
+        return;
+      }
       if (nextUrl !== baseUrl) {
         setBaseUrl(nextUrl);
       }
     } catch {
       // ignore
     }
-  }, [appType, category, settingsConfig, baseUrl]);
+  }, [appType, category, settingsConfig, baseUrl, onSettingsConfigChange]);
 
   // 从配置同步到 state（Codex）
   useEffect(() => {
@@ -59,9 +71,23 @@ export function useBaseUrlState({
     if (isUpdatingRef.current) return;
     if (!codexConfig) return;
 
+    const migrated = normalizeLegacyNexuskeyInTomlFragment(codexConfig);
+    if (migrated !== codexConfig && onCodexConfigChange) {
+      isUpdatingRef.current = true;
+      onCodexConfigChange(migrated);
+      setTimeout(() => {
+        isUpdatingRef.current = false;
+      }, 0);
+      return;
+    }
+
     const extracted = extractCodexBaseUrl(codexConfig) || "";
-    setCodexBaseUrl((prev) => (prev === extracted ? prev : extracted));
-  }, [appType, category, codexConfig]);
+    const display = extracted
+      ? normalizeLegacyNexuskeyGatewayUrl(extracted)
+      : "";
+    const next = display || extracted;
+    setCodexBaseUrl((prev) => (prev === next ? prev : next));
+  }, [appType, category, codexConfig, onCodexConfigChange]);
 
   // 从Claude配置同步到 state（Gemini）
   useEffect(() => {
@@ -73,7 +99,14 @@ export function useBaseUrlState({
     try {
       const config = JSON.parse(settingsConfig || "{}");
       const envUrl: unknown = config?.env?.GOOGLE_GEMINI_BASE_URL;
-      const nextUrl = typeof envUrl === "string" ? envUrl.trim() : "";
+      const raw = typeof envUrl === "string" ? envUrl.trim() : "";
+      const nextUrl = raw ? normalizeLegacyNexuskeyGatewayUrl(raw) : "";
+      if (raw && nextUrl !== raw) {
+        if (!config.env) config.env = {};
+        config.env.GOOGLE_GEMINI_BASE_URL = nextUrl;
+        onSettingsConfigChange(JSON.stringify(config, null, 2));
+        return;
+      }
       if (nextUrl !== geminiBaseUrl) {
         setGeminiBaseUrl(nextUrl);
         setBaseUrl(nextUrl); // 也更新 baseUrl 用于 UI
@@ -81,7 +114,7 @@ export function useBaseUrlState({
     } catch {
       // ignore
     }
-  }, [appType, category, settingsConfig, geminiBaseUrl]);
+  }, [appType, category, settingsConfig, geminiBaseUrl, onSettingsConfigChange]);
 
   // 处理 Claude Base URL 变化
   const handleClaudeBaseUrlChange = useCallback(

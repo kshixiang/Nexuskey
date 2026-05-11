@@ -1,10 +1,10 @@
 {
   "brandName": "NexusKey",
-  "brandUrl": "https://nexuskey.ai",
+  "brandUrl": "https://nexuskey.eu.cc",
   "claude": {
     "id": "nexuskey-claude",
     "name": "NexusKey Claude",
-    "websiteUrl": "https://nexuskey.ai",
+    "websiteUrl": "https://nexuskey.eu.cc",
     "icon": "claude",
     "iconColor": "#D4915D",
     "category": "third_party",
@@ -26,7 +26,7 @@
     "setCurrent": true,
     "settingsConfig": {
       "env": {
-        "ANTHROPIC_BASE_URL": "https://api.nexuskey.ai/claude",
+        "ANTHROPIC_BASE_URL": "https://nexuskey.eu.cc",
         "ANTHROPIC_AUTH_TOKEN": "YOUR_NEXUSKEY_API_KEY",
         "ANTHROPIC_MODEL": "claude-sonnet-4-6",
         "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5",
@@ -38,7 +38,7 @@
   "codex": {
     "id": "nexuskey-codex",
     "name": "NexusKey Codex",
-    "websiteUrl": "https://nexuskey.ai",
+    "websiteUrl": "https://nexuskey.eu.cc",
     "icon": "openai",
     "iconColor": "#00A67E",
     "category": "third_party",
@@ -57,13 +57,13 @@
       "auth": {
         "OPENAI_API_KEY": "YOUR_NEXUSKEY_API_KEY"
       },
-      "config": "model_provider = \"nexuskey\"\nmodel = \"gpt-5.4\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.nexuskey]\nname = \"nexuskey\"\nbase_url = \"https://api.nexuskey.ai/codex/v1\"\nwire_api = \"responses\"\nrequires_openai_auth = true"
+      "config": "model_provider = \"nexuskey\"\nmodel = \"gpt-5.4\"\nmodel_reasoning_effort = \"high\"\ndisable_response_storage = true\n\n[model_providers.nexuskey]\nname = \"nexuskey\"\nbase_url = \"https://nexuskey.eu.cc/v1\"\nwire_api = \"responses\"\nrequires_openai_auth = true"
     }
   },
   "gemini": {
     "id": "nexuskey-gemini",
     "name": "NexusKey Gemini",
-    "websiteUrl": "https://nexuskey.ai",
+    "websiteUrl": "https://nexuskey.eu.cc",
     "icon": "gemini",
     "iconColor": "#4285F4",
     "category": "third_party",
@@ -80,7 +80,7 @@
     "setCurrent": true,
     "settingsConfig": {
       "env": {
-        "GOOGLE_GEMINI_BASE_URL": "https://api.nexuskey.ai/gemini",
+        "GOOGLE_GEMINI_BASE_URL": "https://nexuskey.eu.cc/gemini",
         "GEMINI_API_KEY": "YOUR_NEXUSKEY_API_KEY",
         "GEMINI_MODEL": "gemini-3-pro"
       },
@@ -90,7 +90,7 @@
   "opencode": {
     "id": "nexuskey-opencode",
     "name": "NexusKey OpenCode",
-    "websiteUrl": "https://nexuskey.ai",
+    "websiteUrl": "https://nexuskey.eu.cc",
     "icon": "opencode",
     "iconColor": "#6366F1",
     "category": "third_party",
@@ -99,7 +99,7 @@
       "name": "nexuskey",
       "npm": "@ai-sdk/openai-compatible",
       "options": {
-        "baseURL": "https://api.nexuskey.ai/opencode/v1",
+        "baseURL": "https://nexuskey.eu.cc/opencode/v1",
         "apiKey": "YOUR_NEXUSKEY_API_KEY"
       },
       "models": {
@@ -123,13 +123,13 @@
   "openclaw": {
     "id": "nexuskey-openclaw",
     "name": "NexusKey OpenClaw",
-    "websiteUrl": "https://nexuskey.ai",
+    "websiteUrl": "https://nexuskey.eu.cc",
     "icon": "openai",
     "iconColor": "#00A67E",
     "category": "third_party",
     "liveConfigManaged": true,
     "settingsConfig": {
-      "baseUrl": "https://api.nexuskey.ai/openclaw",
+      "baseUrl": "https://nexuskey.eu.cc/openclaw",
       "apiKey": "YOUR_NEXUSKEY_API_KEY",
       "api": "openai-responses",
       "models": [
@@ -163,14 +163,14 @@
   "hermes": {
     "id": "nexuskey-hermes",
     "name": "NexusKey Hermes",
-    "websiteUrl": "https://nexuskey.ai",
+    "websiteUrl": "https://nexuskey.eu.cc",
     "icon": "hermes",
     "iconColor": "#8B5CF6",
     "category": "third_party",
     "liveConfigManaged": true,
     "settingsConfig": {
       "name": "nexuskey",
-      "base_url": "https://api.nexuskey.ai/hermes/v1",
+      "base_url": "https://nexuskey.eu.cc/hermes/v1",
       "api_key": "YOUR_NEXUSKEY_API_KEY",
       "api_mode": "chat_completions",
       "models": [
@@ -189,7 +189,7 @@
     "hermesModel": {
       "default": "openai/gpt-5.4",
       "provider": "nexuskey-hermes",
-      "base_url": "https://api.nexuskey.ai/hermes/v1"
+      "base_url": "https://nexuskey.eu.cc/hermes/v1"
     }
   }
 }

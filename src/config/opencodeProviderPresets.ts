@@ -1063,26 +1063,26 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
   },
 
   {
-    name: "PackyCode",
-    websiteUrl: "https://www.packyapi.com",
-    apiKeyUrl: "https://www.packyapi.com/register?aff=nexuskey",
+    name: "NexusKey",
+    websiteUrl: "https://nexuskey.eu.cc",
+    apiKeyUrl: "https://nexuskey.eu.cc",
     settingsConfig: {
-      npm: "@ai-sdk/anthropic",
-      name: "PackyCode",
+      npm: "@ai-sdk/openai-compatible",
+      name: "nexuskey",
       options: {
-        baseURL: "https://www.packyapi.com/v1",
+        baseURL: "https://nexuskey.eu.cc/opencode/v1",
         apiKey: "",
         setCacheKey: true,
       },
       models: {
-        "claude-sonnet-4-6": { name: "Claude Sonnet 4.6" },
-        "claude-opus-4-7": { name: "Claude Opus 4.7" },
+        "gpt-5.4": { name: "GPT-5.4" },
+        "gpt-5.4-mini": { name: "GPT-5.4 Mini" },
       },
     },
     category: "third_party",
     isPartner: true,
     partnerPromotionKey: "packycode",
-    icon: "packycode",
+    icon: "opencode",
     templateValues: {
       apiKey: {
         label: "API Key",

@@ -153,19 +153,16 @@ requires_openai_auth = true`,
   },
   {
     name: "PackyCode",
-    websiteUrl: "https://www.packyapi.com",
-    apiKeyUrl: "https://www.packyapi.com/register?aff=nexuskey",
+    websiteUrl: "https://nexuskey.eu.cc",
+    apiKeyUrl: "https://nexuskey.eu.cc",
     category: "third_party",
     auth: generateThirdPartyAuth(""),
     config: generateThirdPartyConfig(
       "packycode",
-      "https://www.packyapi.com/v1",
+      "https://nexuskey.eu.cc/v1",
       "gpt-5.4",
     ),
-    endpointCandidates: [
-      "https://www.packyapi.com/v1",
-      "https://api-slb.packyapi.com/v1",
-    ],
+    endpointCandidates: ["https://nexuskey.eu.cc/v1"],
     isPartner: true, // 合作伙伴
     partnerPromotionKey: "packycode", // 促销信息 i18n key
     icon: "packycode",

@@ -8,6 +8,7 @@ use crate::provider::{UsageData, UsageResult, UsageScript};
 use crate::settings;
 use crate::store::AppState;
 use crate::usage_script;
+use serde_json::Value;
 
 /// Execute usage script and format result (private helper method)
 pub(crate) async fn execute_and_format_usage_result(
@@ -82,31 +83,230 @@ pub(crate) async fn execute_and_format_usage_result(
 }
 
 /// Extract API key from provider configuration
+///
+/// 同时兼容多种应用的写法：
+/// - Claude/Gemini：`env.{ANTHROPIC_AUTH_TOKEN|ANTHROPIC_API_KEY|GEMINI_API_KEY|GOOGLE_API_KEY|OPENROUTER_API_KEY}`
+/// - Codex：`auth.OPENAI_API_KEY`
+/// - Hermes：顶层 `api_key`
+/// - OpenClaw / OpenCode：顶层 `apiKey`
 fn extract_api_key_from_provider(provider: &crate::provider::Provider) -> Option<String> {
-    if let Some(env) = provider.settings_config.get("env") {
-        // Try multiple possible API key fields
-        env.get("ANTHROPIC_AUTH_TOKEN")
+    let cfg = &provider.settings_config;
+
+    if let Some(env) = cfg.get("env") {
+        if let Some(s) = env
+            .get("ANTHROPIC_AUTH_TOKEN")
             .or_else(|| env.get("ANTHROPIC_API_KEY"))
             .or_else(|| env.get("OPENROUTER_API_KEY"))
+            .or_else(|| env.get("GEMINI_API_KEY"))
             .or_else(|| env.get("GOOGLE_API_KEY"))
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
+        {
+            if !s.is_empty() {
+                return Some(s.to_string());
+            }
+        }
+    }
+
+    if let Some(s) = cfg
+        .get("auth")
+        .and_then(|a| a.get("OPENAI_API_KEY"))
+        .and_then(|v| v.as_str())
+    {
+        if !s.is_empty() {
+            return Some(s.to_string());
+        }
+    }
+
+    if let Some(s) = cfg.get("api_key").and_then(|v| v.as_str()) {
+        if !s.is_empty() {
+            return Some(s.to_string());
+        }
+    }
+    if let Some(s) = cfg.get("apiKey").and_then(|v| v.as_str()) {
+        if !s.is_empty() {
+            return Some(s.to_string());
+        }
+    }
+
+    None
+}
+
+/// 旧网关域名统一为当前官方入口（本地库里仍可能存 `api.nexuskey.ai`）。
+pub(crate) fn normalize_legacy_nexuskey_gateway_url(url: &str) -> String {
+    let t = url.trim().trim_end_matches('/');
+    const OLD_HTTPS: &str = "https://api.nexuskey.ai";
+    const OLD_HTTP: &str = "http://api.nexuskey.ai";
+    const NEW: &str = "https://nexuskey.eu.cc";
+    if let Some(rest) = t.strip_prefix(OLD_HTTPS) {
+        return if rest.is_empty() {
+            NEW.to_string()
+        } else {
+            format!("{NEW}{rest}")
+        };
+    }
+    if let Some(rest) = t.strip_prefix(OLD_HTTP) {
+        return if rest.is_empty() {
+            NEW.to_string()
+        } else {
+            format!("{NEW}{rest}")
+        };
+    }
+    t.to_string()
+}
+
+const NEXUSKEY_OFFICIAL_ROOT: &str = "https://nexuskey.eu.cc";
+const NEXUSKEY_OFFICIAL_ANTHROPIC_CLAUDE_PREFIX: &str = "https://nexuskey.eu.cc/claude";
+
+/// 官方网关 Anthropic Base URL 仅使用根域名；历史里的 `/claude` 路径折叠掉。
+fn strip_nexuskey_official_anthropic_claude_path(url: &str) -> String {
+    let t = url.trim().trim_end_matches('/');
+    if t == NEXUSKEY_OFFICIAL_ANTHROPIC_CLAUDE_PREFIX
+        || t.starts_with(&format!("{NEXUSKEY_OFFICIAL_ANTHROPIC_CLAUDE_PREFIX}/"))
+    {
+        NEXUSKEY_OFFICIAL_ROOT.to_string()
     } else {
-        None
+        t.to_string()
+    }
+}
+
+/// 旧域名迁移 + 官方 Anthropic 入口折叠为 `https://nexuskey.eu.cc`。
+pub(crate) fn normalize_nexuskey_anthropic_base_url(url: &str) -> String {
+    let after_legacy = normalize_legacy_nexuskey_gateway_url(url);
+    strip_nexuskey_official_anthropic_claude_path(&after_legacy)
+}
+
+fn normalize_legacy_nexuskey_in_toml_fragment(s: &str) -> String {
+    let mut out = s
+        .replace("https://api.nexuskey.ai", "https://nexuskey.eu.cc")
+        .replace("http://api.nexuskey.ai", "https://nexuskey.eu.cc");
+    // 官方网关：OpenAI 兼容入口在 /v1，不再使用 /codex/v1（/v1/models 需在根上）
+    out = out.replace(
+        "https://nexuskey.eu.cc/codex/v1",
+        "https://nexuskey.eu.cc/v1",
+    );
+    out
+}
+
+/// 将已保存供应商里残留的 `api.nexuskey.ai` 写入为当前官方入口，避免 Live/平台侧仍显示旧域名。
+pub(crate) fn normalize_legacy_nexuskey_urls_in_provider_settings(
+    app_type: &AppType,
+    settings: &mut Value,
+) {
+    match app_type {
+        AppType::Claude => {
+            if let Some(env) = settings.get_mut("env").and_then(|v| v.as_object_mut()) {
+                if let Some(v) = env.get_mut("ANTHROPIC_BASE_URL") {
+                    if let Some(s) = v.as_str() {
+                        let n = normalize_nexuskey_anthropic_base_url(s);
+                        if n != s {
+                            *v = Value::String(n);
+                        }
+                    }
+                }
+            }
+        }
+        AppType::Gemini => {
+            if let Some(env) = settings.get_mut("env").and_then(|v| v.as_object_mut()) {
+                if let Some(v) = env.get_mut("GOOGLE_GEMINI_BASE_URL") {
+                    if let Some(s) = v.as_str() {
+                        let n = normalize_legacy_nexuskey_gateway_url(s);
+                        if n != s {
+                            *v = Value::String(n);
+                        }
+                    }
+                }
+            }
+        }
+        AppType::Codex => {
+            if let Some(v) = settings.get_mut("config") {
+                if let Some(s) = v.as_str() {
+                    let n = normalize_legacy_nexuskey_in_toml_fragment(s);
+                    if n != *s {
+                        *v = Value::String(n);
+                    }
+                }
+            }
+        }
+        AppType::OpenCode => {
+            if let Some(options) = settings.get_mut("options").and_then(|o| o.as_object_mut()) {
+                if let Some(v) = options.get_mut("baseURL") {
+                    if let Some(s) = v.as_str() {
+                        let n = normalize_legacy_nexuskey_gateway_url(s);
+                        if n != s {
+                            *v = Value::String(n);
+                        }
+                    }
+                }
+            }
+        }
+        AppType::OpenClaw => {
+            if let Some(v) = settings.get_mut("baseUrl") {
+                if let Some(s) = v.as_str() {
+                    let n = normalize_legacy_nexuskey_gateway_url(s);
+                    if n != s {
+                        *v = Value::String(n);
+                    }
+                }
+            }
+        }
+        AppType::Hermes => {
+            if let Some(v) = settings.get_mut("base_url") {
+                if let Some(s) = v.as_str() {
+                    let n = normalize_legacy_nexuskey_gateway_url(s);
+                    if n != s {
+                        *v = Value::String(n);
+                    }
+                }
+            }
+        }
+        AppType::Cursor => {}
     }
 }
 
 /// Extract base URL from provider configuration
+///
+/// 兼容 Claude（ANTHROPIC_BASE_URL）/ Gemini（GOOGLE_GEMINI_BASE_URL）/
+/// Hermes（base_url）/ OpenClaw / OpenCode（baseUrl）。
+/// Codex 的 base_url 在 TOML 字符串里，按需在前端处理，这里不解析。
 fn extract_base_url_from_provider(provider: &crate::provider::Provider) -> Option<String> {
-    if let Some(env) = provider.settings_config.get("env") {
-        // Try multiple possible base URL fields
-        env.get("ANTHROPIC_BASE_URL")
-            .or_else(|| env.get("GOOGLE_GEMINI_BASE_URL"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.trim_end_matches('/').to_string())
-    } else {
-        None
+    let cfg = &provider.settings_config;
+
+    if let Some(env) = cfg.get("env").and_then(|v| v.as_object()) {
+        if let Some(s) = env.get("ANTHROPIC_BASE_URL").and_then(|v| v.as_str()) {
+            if !s.is_empty() {
+                return Some(normalize_nexuskey_anthropic_base_url(s));
+            }
+        }
+        if let Some(s) = env.get("GOOGLE_GEMINI_BASE_URL").and_then(|v| v.as_str()) {
+            if !s.is_empty() {
+                return Some(normalize_legacy_nexuskey_gateway_url(s));
+            }
+        }
     }
+
+    if let Some(s) = cfg.get("base_url").and_then(|v| v.as_str()) {
+        if !s.is_empty() {
+            return Some(normalize_legacy_nexuskey_gateway_url(s));
+        }
+    }
+    if let Some(s) = cfg.get("baseUrl").and_then(|v| v.as_str()) {
+        if !s.is_empty() {
+            return Some(normalize_legacy_nexuskey_gateway_url(s));
+        }
+    }
+
+    None
+}
+
+/// Base URL + API key for OpenAI-compatible `GET /v1/models`（托管主界面模型列表等）。
+pub fn models_list_credentials(provider: &crate::provider::Provider) -> Option<(String, String)> {
+    let base = extract_base_url_from_provider(provider)?;
+    let key = extract_api_key_from_provider(provider)?;
+    let key = key.trim().to_string();
+    if key.is_empty() {
+        return None;
+    }
+    Some((base, key))
 }
 
 /// Query provider usage (using saved script configuration)
@@ -152,12 +352,15 @@ pub async fn query_usage(
             .or_else(|| extract_api_key_from_provider(provider))
             .unwrap_or_default();
 
-        let base_url = usage_script
-            .base_url
-            .clone()
-            .filter(|u| !u.is_empty())
-            .or_else(|| extract_base_url_from_provider(provider))
-            .unwrap_or_default();
+        let base_url = {
+            let raw = usage_script
+                .base_url
+                .clone()
+                .filter(|u| !u.is_empty())
+                .or_else(|| extract_base_url_from_provider(provider))
+                .unwrap_or_default();
+            normalize_legacy_nexuskey_gateway_url(&raw)
+        };
 
         (
             usage_script.code.clone(),
@@ -197,10 +400,11 @@ pub async fn test_usage_script(
     template_type: Option<&str>,
 ) -> Result<UsageResult, AppError> {
     // Use provided credential parameters directly for testing
+    let base_url = normalize_legacy_nexuskey_gateway_url(base_url.unwrap_or(""));
     execute_and_format_usage_result(
         script_code,
         api_key.unwrap_or(""),
-        base_url.unwrap_or(""),
+        &base_url,
         timeout,
         access_token,
         user_id,

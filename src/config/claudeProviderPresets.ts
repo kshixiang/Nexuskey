@@ -521,19 +521,16 @@ export const providerPresets: ProviderPreset[] = [
   },
   {
     name: "PackyCode",
-    websiteUrl: "https://www.packyapi.com",
-    apiKeyUrl: "https://www.packyapi.com/register?aff=nexuskey",
+    websiteUrl: "https://nexuskey.eu.cc",
+    apiKeyUrl: "https://nexuskey.eu.cc",
     settingsConfig: {
       env: {
-        ANTHROPIC_BASE_URL: "https://www.packyapi.com",
+        ANTHROPIC_BASE_URL: "https://nexuskey.eu.cc",
         ANTHROPIC_AUTH_TOKEN: "",
       },
     },
     // 请求地址候选（用于地址管理/测速）
-    endpointCandidates: [
-      "https://www.packyapi.com",
-      "https://api-slb.packyapi.com",
-    ],
+    endpointCandidates: ["https://nexuskey.eu.cc"],
     category: "third_party",
     isPartner: true, // 合作伙伴
     partnerPromotionKey: "packycode", // 促销信息 i18n key

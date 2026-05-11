@@ -340,6 +340,49 @@ impl Database {
         Ok(())
     }
 
+    /// 仅更新 `meta.usage_script`（托管中继模式下允许，完整 `update_provider` 会被拦截）
+    pub fn patch_provider_usage_script(
+        &self,
+        app_type: &str,
+        provider_id: &str,
+        usage_script: &crate::provider::UsageScript,
+    ) -> Result<(), AppError> {
+        let conn = lock_conn!(self.conn);
+        let meta_str: String = conn
+            .query_row(
+                "SELECT meta FROM providers WHERE id = ?1 AND app_type = ?2",
+                params![provider_id, app_type],
+                |row| row.get(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => AppError::Database(format!(
+                    "Provider '{provider_id}' not found for app {app_type}"
+                )),
+                _ => AppError::Database(e.to_string()),
+            })?;
+
+        let mut meta: crate::provider::ProviderMeta =
+            serde_json::from_str(&meta_str).unwrap_or_default();
+        meta.usage_script = Some(usage_script.clone());
+
+        let new_meta = serde_json::to_string(&meta).map_err(|e| {
+            AppError::Database(format!("Failed to serialize meta: {e}"))
+        })?;
+
+        let n = conn
+            .execute(
+                "UPDATE providers SET meta = ?1 WHERE id = ?2 AND app_type = ?3",
+                params![new_meta, provider_id, app_type],
+            )
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        if n == 0 {
+            return Err(AppError::Database(format!(
+                "Provider '{provider_id}' not found for app {app_type}"
+            )));
+        }
+        Ok(())
+    }
+
     pub fn add_custom_endpoint(
         &self,
         app_type: &str,
@@ -662,13 +705,47 @@ impl Database {
                 }
             }
 
-            let already_exists = self
-                .get_provider_by_id(&seed.provider.id, app_type_str)?
-                .is_some();
+            let existing = self.get_provider_by_id(&seed.provider.id, app_type_str)?;
+            let already_exists = existing.is_some();
 
             let mut provider = seed.provider.clone();
             provider.sort_index = Some(self.next_sort_index_for_app(app_type_str)?);
-            provider.created_at = Some(now_ms);
+
+            if let Some(prev) = existing {
+                // ── 已存在：合并而非整体覆盖 ──
+                // 目的：每次启动都会重新跑这里，但用户填过的 API Key、保存过的
+                // usage_script 不能被 seed 的占位符 / 空值覆盖回去。
+                provider.created_at = prev.created_at;
+
+                // 1) settings_config：将 seed 中所有 "YOUR_*" 占位符替换为
+                //    用户已有的真实值；其它字段（base_url / 模型列表 / API
+                //    格式等）继续用 seed 的最新值，便于版本升级时下发改动。
+                provider.settings_config = merge_settings_config_preserve_user_values(
+                    &prev.settings_config,
+                    &provider.settings_config,
+                );
+
+                // 2) meta：保留用户的 usage_script / custom_endpoints 等强用户
+                //    意图字段；展示元数据（partner / iconColor 等）仍取 seed。
+                let mut new_meta = provider.meta.clone().unwrap_or_default();
+                if let Some(prev_meta) = prev.meta {
+                    if prev_meta.usage_script.is_some() {
+                        new_meta.usage_script = prev_meta.usage_script;
+                    }
+                    if !prev_meta.custom_endpoints.is_empty() {
+                        new_meta.custom_endpoints = prev_meta.custom_endpoints;
+                    }
+                    if prev_meta.endpoint_auto_select.is_some() {
+                        new_meta.endpoint_auto_select = prev_meta.endpoint_auto_select;
+                    }
+                    if prev_meta.common_config_enabled.is_some() {
+                        new_meta.common_config_enabled = prev_meta.common_config_enabled;
+                    }
+                }
+                provider.meta = Some(new_meta);
+            } else {
+                provider.created_at = Some(now_ms);
+            }
 
             self.save_provider(app_type_str, &provider)?;
 
@@ -690,5 +767,57 @@ impl Database {
         self.set_setting("official_providers_seeded", "true")?;
 
         Ok(synced)
+    }
+}
+
+/// 合并 seed 与用户已存的 `settings_config`：
+///
+/// - 凡 seed 里以 `YOUR_` 开头的字符串占位符，**如果用户那边已有非占位值**，
+///   则用用户值；否则维持 seed 的占位符。
+/// - 其它字段（URL、模型列表、TOML 配置等）一律以 seed 为准，便于发行方在
+///   `managed-providers.default.json` 中下发更新。
+/// - 递归处理嵌套对象；数组按 index 对齐合并。
+fn merge_settings_config_preserve_user_values(
+    prev: &serde_json::Value,
+    seed: &serde_json::Value,
+) -> serde_json::Value {
+    use serde_json::Value;
+
+    match (prev, seed) {
+        (Value::Object(prev_obj), Value::Object(seed_obj)) => {
+            let mut merged = serde_json::Map::with_capacity(seed_obj.len());
+            for (k, seed_v) in seed_obj.iter() {
+                let merged_v = match prev_obj.get(k) {
+                    Some(prev_v) => merge_settings_config_preserve_user_values(prev_v, seed_v),
+                    None => seed_v.clone(),
+                };
+                merged.insert(k.clone(), merged_v);
+            }
+            Value::Object(merged)
+        }
+        (Value::Array(prev_arr), Value::Array(seed_arr)) => {
+            let merged: Vec<Value> = seed_arr
+                .iter()
+                .enumerate()
+                .map(|(i, seed_v)| match prev_arr.get(i) {
+                    Some(prev_v) => merge_settings_config_preserve_user_values(prev_v, seed_v),
+                    None => seed_v.clone(),
+                })
+                .collect();
+            Value::Array(merged)
+        }
+        // 字符串：seed 是 "YOUR_*" 占位符 → 优先使用用户的真实值（非占位、非空）
+        (Value::String(prev_s), Value::String(seed_s)) => {
+            if seed_s.starts_with("YOUR_")
+                && !prev_s.is_empty()
+                && !prev_s.starts_with("YOUR_")
+            {
+                Value::String(prev_s.clone())
+            } else {
+                Value::String(seed_s.clone())
+            }
+        }
+        // 其它：以 seed 为准
+        (_, seed_v) => seed_v.clone(),
     }
 }

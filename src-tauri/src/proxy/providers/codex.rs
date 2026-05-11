@@ -267,8 +267,8 @@ mod tests {
     fn test_build_url_dedup_v1() {
         let adapter = CodexAdapter::new();
         // base_url 已包含 /v1，endpoint 也包含 /v1
-        let url = adapter.build_url("https://www.packyapi.com/v1", "/v1/responses");
-        assert_eq!(url, "https://www.packyapi.com/v1/responses");
+        let url = adapter.build_url("https://nexuskey.eu.cc/codex/v1", "/v1/responses");
+        assert_eq!(url, "https://nexuskey.eu.cc/codex/v1/responses");
     }
 
     // 官方客户端检测测试

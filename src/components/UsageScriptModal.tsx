@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Play, Wand2, Eye, EyeOff, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
@@ -25,6 +25,21 @@ import {
   CODING_PLAN_PROVIDERS,
   detectCodingPlanProvider,
 } from "@/config/codingPlanProviders";
+import {
+  getManagedNewApiPanelUrl,
+  isManagedModeEnabled,
+} from "@/config/managedMode";
+
+/** 取 URL 的协议+host，用作 New API 面板根地址；非法 URL 原样返回 */
+function deriveNewApiPanelUrl(providerBaseUrl: string | undefined): string {
+  if (!providerBaseUrl) return "";
+  try {
+    const u = new URL(providerBaseUrl);
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return providerBaseUrl;
+  }
+}
 
 interface UsageScriptModalProps {
   provider: Provider;
@@ -72,28 +87,37 @@ const generatePresetTemplates = (
 
   [TEMPLATE_TYPES.NEW_API]: `({
   request: {
-    url: "{{baseUrl}}/api/user/self",
+    url: "{{baseUrl}}/api/usage/token",
     method: "GET",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": "Bearer {{accessToken}}",
-      "User-Agent": "NexusKey/1.0",
-      "New-Api-User": "{{userId}}"
+      "Authorization": "Bearer {{apiKey}}",
+      "User-Agent": "NexusKey/1.0"
     },
   },
   extractor: function (response) {
-    if (response.success && response.data) {
+    if (response && response.data) {
+      var d = response.data;
+      if (d.unlimited_quota) {
+        return {
+          planName: d.name || "${t("usageScript.defaultPlan")}",
+          remaining: -1,
+          total: -1,
+          used: (d.total_used || 0) / 500000,
+          unit: "USD",
+        };
+      }
       return {
-        planName: response.data.group || "${t("usageScript.defaultPlan")}",
-        remaining: response.data.quota / 500000,
-        used: response.data.used_quota / 500000,
-        total: (response.data.quota + response.data.used_quota) / 500000,
+        planName: d.name || "${t("usageScript.defaultPlan")}",
+        remaining: (d.total_available || 0) / 500000,
+        used: (d.total_used || 0) / 500000,
+        total: (d.total_granted || 0) / 500000,
         unit: "USD",
       };
     }
     return {
       isValid: false,
-      invalidMessage: response.message || "${t("usageScript.queryFailedMessage")}"
+      invalidMessage: (response && response.message) || "${t("usageScript.queryFailedMessage")}"
     };
   },
 })`,
@@ -372,6 +396,11 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
         | "balance"
         | undefined,
     };
+    // 简化模式下：不持久化 apiKey，让后台查询走「从供应商配置实时提取」
+    // 的回退路径，避免用户在主界面改了 chat key 后这里出现 stale。
+    if (simplified) {
+      scriptWithTemplate.apiKey = undefined;
+    }
     onSave(scriptWithTemplate);
     onClose();
   };
@@ -616,6 +645,40 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
     selectedTemplate === TEMPLATE_TYPES.GENERAL ||
     selectedTemplate === TEMPLATE_TYPES.NEW_API;
 
+  // ── 简化模式（managed 构建：NexusKey 等）───────────────
+  // 普通用户只需要填 URL / Access Token / User ID 三个值，其它（模板选择、
+  // 代码编辑器、超时、自动刷新间隔、帮助文档）一律隐藏，使用合理默认。
+  const simplified = isManagedModeEnabled();
+  // managed 构建固定指向托管的 New API 面板（通过 VITE_MANAGED_NEW_API_PANEL_URL
+  // 可覆盖）；非法/无值时退回从供应商 baseUrl 推导。
+  const defaultNewApiBaseUrl = useMemo(() => {
+    if (simplified) return getManagedNewApiPanelUrl();
+    return deriveNewApiPanelUrl(providerCredentials.baseUrl);
+  }, [simplified, providerCredentials.baseUrl]);
+
+  // 进入简化模式时，强制选 New API 模板并预置脚本代码与默认 baseUrl。
+  // 简化模式使用 /api/usage/token 端点，**直接复用供应商已配置的 sk-xxx**
+  // 作为 Bearer，避免普通用户混淆「访问令牌 vs API Key」两个概念。
+  // 每次进入都会刷新 code 到最新模板，确保旧用户从 /api/user/self 自动迁移
+  // 到 /api/usage/token；accessToken / userId 字段不再使用，清空避免脏数据。
+  useEffect(() => {
+    if (!simplified) return;
+    setSelectedTemplate(TEMPLATE_TYPES.NEW_API);
+    setScript((prev) => ({
+      ...prev,
+      code: PRESET_TEMPLATES[TEMPLATE_TYPES.NEW_API],
+      baseUrl: prev.baseUrl || defaultNewApiBaseUrl,
+      apiKey: providerCredentials.apiKey || prev.apiKey,
+      accessToken: undefined,
+      userId: undefined,
+      timeout: prev.timeout ?? 10,
+      autoQueryInterval: prev.autoQueryInterval ?? 5,
+    }));
+    // PRESET_TEMPLATES 与 t 在每次渲染都会重建，加入依赖会循环；这里只关心
+    // simplified / 默认 baseUrl / 供应商凭据变化，其余忽略是安全的。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [simplified, defaultNewApiBaseUrl, providerCredentials.apiKey]);
+
   const footer = (
     <>
       <div className="flex gap-2">
@@ -677,7 +740,92 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
         />
       </div>
 
-      {script.enabled && (
+      {/* ── 简化模式（managed 构建）：URL + 自动复用供应商 API Key ── */}
+      {script.enabled && simplified && (
+        <div className="space-y-4 glass rounded-xl border border-white/10 p-6">
+          <div className="space-y-1">
+            <h4 className="text-sm font-medium text-foreground">
+              {t("usageScript.simplifiedTitle", {
+                defaultValue: "余额查询配置",
+              })}
+            </h4>
+            <p className="text-xs text-muted-foreground">
+              {t("usageScript.simplifiedHint", {
+                defaultValue:
+                  "自动使用该供应商已配置的 API Key 查询当前 Key 的剩余额度，无需重复填写。",
+              })}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="usage-newapi-base-url-simple">
+              {t("usageScript.baseUrl")}
+            </Label>
+            <Input
+              id="usage-newapi-base-url-simple"
+              type="text"
+              value={script.baseUrl || ""}
+              onChange={(e) =>
+                setScript({ ...script, baseUrl: e.target.value })
+              }
+              placeholder={defaultNewApiBaseUrl || "https://nexuskey.eu.cc"}
+              autoComplete="off"
+              className="border-white/10"
+            />
+          </div>
+
+          <div className="rounded-lg border border-white/10 bg-background/40 px-3 py-2.5 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground/80">
+              {t("usageScript.simplifiedKeyLabel", {
+                defaultValue: "API Key",
+              })}
+              ：
+            </span>
+            {providerCredentials.apiKey ? (
+              <>
+                {showAccessToken ? (
+                  <code className="font-mono text-foreground/70 break-all">
+                    {providerCredentials.apiKey}
+                  </code>
+                ) : (
+                  <code className="font-mono text-foreground/70">
+                    {providerCredentials.apiKey.slice(0, 6)}
+                    ••••••••
+                    {providerCredentials.apiKey.slice(-4)}
+                  </code>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowAccessToken(!showAccessToken)}
+                  className="ml-2 inline-flex items-center text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={
+                    showAccessToken
+                      ? t("apiKeyInput.hide")
+                      : t("apiKeyInput.show")
+                  }
+                >
+                  {showAccessToken ? <EyeOff size={12} /> : <Eye size={12} />}
+                </button>
+                <p className="mt-1.5 text-[11px] text-muted-foreground/70">
+                  {t("usageScript.simplifiedKeyAutoFilled", {
+                    defaultValue:
+                      "复用供应商已配置的 API Key。若需更换，请到主界面修改。",
+                  })}
+                </p>
+              </>
+            ) : (
+              <span className="text-orange-500 dark:text-orange-400">
+                {t("usageScript.simplifiedKeyMissing", {
+                  defaultValue:
+                    "未检测到 API Key — 请先在主界面填写该供应商的 API Key。",
+                })}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {script.enabled && !simplified && (
         <div className="space-y-6">
           {/* 预设模板选择 */}
           <div className="space-y-4 glass rounded-xl border border-white/10 p-6">
@@ -943,7 +1091,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
                           onChange={(e) =>
                             setScript({ ...script, baseUrl: e.target.value })
                           }
-                          placeholder="https://api.newapi.com"
+                          placeholder="https://nexuskey.eu.cc"
                           autoComplete="off"
                           className="border-white/10"
                         />

@@ -71,24 +71,21 @@ export const geminiProviderPresets: GeminiProviderPreset[] = [
   },
   {
     name: "PackyCode",
-    websiteUrl: "https://www.packyapi.com",
-    apiKeyUrl: "https://www.packyapi.com/register?aff=nexuskey",
+    websiteUrl: "https://nexuskey.eu.cc",
+    apiKeyUrl: "https://nexuskey.eu.cc",
     settingsConfig: {
       env: {
-        GOOGLE_GEMINI_BASE_URL: "https://www.packyapi.com",
+        GOOGLE_GEMINI_BASE_URL: "https://nexuskey.eu.cc/gemini",
         GEMINI_MODEL: "gemini-3.1-pro",
       },
     },
-    baseURL: "https://www.packyapi.com",
+    baseURL: "https://nexuskey.eu.cc/gemini",
     model: "gemini-3.1-pro",
     description: "PackyCode",
     category: "third_party",
     isPartner: true,
     partnerPromotionKey: "packycode",
-    endpointCandidates: [
-      "https://api-slb.packyapi.com",
-      "https://www.packyapi.com",
-    ],
+    endpointCandidates: ["https://nexuskey.eu.cc/gemini"],
     icon: "packycode",
   },
   {

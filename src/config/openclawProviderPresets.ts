@@ -1113,32 +1113,32 @@ export const openclawProviderPresets: OpenClawProviderPreset[] = [
 
   // ========== Third Party Partners ==========
   {
-    name: "PackyCode",
-    websiteUrl: "https://www.packyapi.com",
-    apiKeyUrl: "https://www.packyapi.com/register?aff=nexuskey",
+    name: "NexusKey",
+    websiteUrl: "https://nexuskey.eu.cc",
+    apiKeyUrl: "https://nexuskey.eu.cc",
     settingsConfig: {
-      baseUrl: "https://www.packyapi.com",
+      baseUrl: "https://nexuskey.eu.cc/openclaw",
       apiKey: "",
-      api: "anthropic-messages",
+      api: "openai-responses",
       models: [
         {
-          id: "claude-opus-4-7",
-          name: "Claude Opus 4.7",
-          contextWindow: 1000000,
-          cost: { input: 5, output: 25 },
+          id: "gpt-5.4",
+          name: "GPT-5.4",
+          contextWindow: 400000,
+          maxTokens: 128000,
         },
         {
-          id: "claude-sonnet-4-6",
-          name: "Claude Sonnet 4.6",
-          contextWindow: 1000000,
-          cost: { input: 3, output: 15 },
+          id: "gpt-5.4-mini",
+          name: "GPT-5.4 Mini",
+          contextWindow: 200000,
+          maxTokens: 64000,
         },
       ],
     },
     category: "third_party",
     isPartner: true,
     partnerPromotionKey: "packycode",
-    icon: "packycode",
+    icon: "openai",
     templateValues: {
       apiKey: {
         label: "API Key",
@@ -1148,12 +1148,12 @@ export const openclawProviderPresets: OpenClawProviderPreset[] = [
     },
     suggestedDefaults: {
       model: {
-        primary: "packycode/claude-opus-4-7",
-        fallbacks: ["packycode/claude-sonnet-4-6"],
+        primary: "nexuskey/gpt-5.4",
+        fallbacks: ["nexuskey/gpt-5.4-mini"],
       },
       modelCatalog: {
-        "packycode/claude-opus-4-7": { alias: "Opus" },
-        "packycode/claude-sonnet-4-6": { alias: "Sonnet" },
+        "nexuskey/gpt-5.4": { alias: "GPT-5.4" },
+        "nexuskey/gpt-5.4-mini": { alias: "GPT-5.4 Mini" },
       },
     },
   },

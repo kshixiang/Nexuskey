@@ -23,7 +23,7 @@ const PACKYCODE_PARTNER_KEY: &str = "packycode";
 const GOOGLE_OFFICIAL_PARTNER_KEY: &str = "google-official";
 
 // PackyCode keyword constants
-const PACKYCODE_KEYWORDS: [&str; 3] = ["packycode", "packyapi", "packy"];
+const PACKYCODE_KEYWORDS: [&str; 4] = ["packycode", "packyapi", "packy", "nexuskey"];
 
 /// Detect Gemini provider authentication type
 ///
@@ -81,7 +81,7 @@ pub(crate) fn detect_gemini_auth_type(provider: &Provider) -> GeminiAuthType {
 
 /// Check if string contains PackyCode related keywords (case-insensitive)
 ///
-/// Keyword list: ["packycode", "packyapi", "packy"]
+/// Keyword list: ["packycode", "packyapi", "packy", "nexuskey"]
 fn contains_packycode_keyword(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     PACKYCODE_KEYWORDS

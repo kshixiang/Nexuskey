@@ -4,6 +4,7 @@
 //! 主要面向第三方聚合站（硅基流动、OpenRouter 等），以及把 Anthropic
 //! 协议挂在兼容子路径上的官方供应商（DeepSeek、Kimi、智谱 GLM 等）。
 
+use crate::services::provider::normalize_legacy_nexuskey_gateway_url;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -16,25 +17,72 @@ pub struct FetchedModel {
     pub owned_by: Option<String>,
 }
 
-/// OpenAI 兼容的 /v1/models 响应格式
-#[derive(Debug, Deserialize)]
-struct ModelsResponse {
-    data: Option<Vec<ModelEntry>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ModelEntry {
-    id: String,
-    owned_by: Option<String>,
-}
-
 const FETCH_TIMEOUT_SECS: u64 = 15;
 
 /// 404/405 响应体截断长度：避免把几十 KB HTML 404 页整页保留到错误串里。
 const ERROR_BODY_MAX_CHARS: usize = 512;
 
-/// 已知的「Anthropic 协议兼容子路径」后缀；按长度降序，最长前缀优先匹配。
-/// baseURL 命中这些后缀时，候选列表会追加「剥离后缀再拼 /v1/models / /models」的版本。
+/// 从 JSON 解析模型列表：OpenAI `{ data: [...] }`、字符串数组、`data` 为 id→对象映射等。
+fn parse_models_from_json_value(value: &serde_json::Value) -> Option<Vec<FetchedModel>> {
+    if let Some(arr) = value.get("data").and_then(|v| v.as_array()) {
+        if arr.is_empty() {
+            return Some(vec![]);
+        }
+        let mut out = Vec::new();
+        for item in arr {
+            if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
+                let owned_by = item.get("owned_by").and_then(|v| v.as_str()).map(String::from);
+                out.push(FetchedModel {
+                    id: id.to_string(),
+                    owned_by,
+                });
+            } else if let Some(s) = item.as_str() {
+                out.push(FetchedModel {
+                    id: s.to_string(),
+                    owned_by: None,
+                });
+            }
+        }
+        if !out.is_empty() {
+            return Some(out);
+        }
+    }
+
+    if let Some(obj) = value.get("data").and_then(|v| v.as_object()) {
+        if obj.is_empty() {
+            return None;
+        }
+        let all_values_are_objects = obj.values().all(|v| v.is_object());
+        if all_values_are_objects {
+            let mut ids: Vec<String> = obj.keys().cloned().collect();
+            ids.sort();
+            return Some(
+                ids
+                    .into_iter()
+                    .map(|id| FetchedModel {
+                        id,
+                        owned_by: None,
+                    })
+                    .collect(),
+            );
+        }
+    }
+
+    None
+}
+
+fn parse_models_response_bytes(bytes: &[u8]) -> Result<Vec<FetchedModel>, String> {
+    let value: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|e| format!("invalid JSON: {e}"))?;
+    parse_models_from_json_value(&value).ok_or_else(|| {
+        let prefix = String::from_utf8_lossy(bytes);
+        let snippet: String = prefix.chars().take(ERROR_BODY_MAX_CHARS).collect();
+        format!("unknown models JSON shape (prefix): {snippet}")
+    })
+}
+
+/// 已知的「Anthropic / Claude 协议兼容子路径」后缀；按长度降序，最长前缀优先匹配。
+/// baseURL 命中时先尝试剥离后的网关根 `/v1/models`（聚合列表常为 OpenAI JSON），再尝试带子路径的 URL。
 const KNOWN_COMPAT_SUFFIXES: &[&str] = &[
     "/api/claudecode",
     "/api/anthropic",
@@ -60,12 +108,25 @@ pub async fn fetch_models(
         return Err("API Key is required to fetch models".to_string());
     }
 
-    let candidates = build_models_url_candidates(base_url, is_full_url, models_url_override)?;
+    // 仅做旧域名迁移；勿使用 Claude 专用的 `/claude` 路径折叠（会破坏 Codex `…/codex/v1` 等）。
+    let base_url = normalize_legacy_nexuskey_gateway_url(base_url);
+    let models_url_override = models_url_override.map(normalize_legacy_nexuskey_gateway_url);
+    let candidates = build_models_url_candidates(
+        &base_url,
+        is_full_url,
+        models_url_override.as_deref(),
+    )?;
+    log::info!(
+        "[ModelFetch] request base_url={} is_full_url={} candidates={}",
+        base_url.trim(),
+        is_full_url,
+        candidates.len()
+    );
     let client = crate::proxy::http_client::get();
     let mut last_err: Option<String> = None;
 
     for url in &candidates {
-        log::debug!("[ModelFetch] Trying endpoint: {url}");
+        log::info!("[ModelFetch] try GET {url}");
         let response = match client
             .get(url)
             .header("Authorization", format!("Bearer {api_key}"))
@@ -75,30 +136,39 @@ pub async fn fetch_models(
         {
             Ok(r) => r,
             Err(e) => {
-                return Err(format!("Request failed: {e}"));
+                // 与 404 类似：首个候选（如 …/claude/v1/models）可能根本不可达，
+                // 继续尝试剥离兼容子路径后的根域名 /v1/models。
+                log::warn!("[ModelFetch] try GET {url} transport error: {e}");
+                last_err = Some(format!("Request failed for {url}: {e}"));
+                continue;
             }
         };
 
         let status = response.status();
 
         if status.is_success() {
-            let resp: ModelsResponse = response
-                .json()
+            let bytes = response
+                .bytes()
                 .await
-                .map_err(|e| format!("Failed to parse response: {e}"))?;
-
-            let mut models: Vec<FetchedModel> = resp
-                .data
-                .unwrap_or_default()
-                .into_iter()
-                .map(|m| FetchedModel {
-                    id: m.id,
-                    owned_by: m.owned_by,
-                })
-                .collect();
-
-            models.sort_by(|a, b| a.id.cmp(&b.id));
-            return Ok(models);
+                .map_err(|e| format!("read body: {e}"))?;
+            match parse_models_response_bytes(&bytes) {
+                Ok(mut models) => {
+                    models.sort_by(|a, b| a.id.cmp(&b.id));
+                    log::info!(
+                        "[ModelFetch] success count={} url={}",
+                        models.len(),
+                        url
+                    );
+                    return Ok(models);
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[ModelFetch] parse failed for {url}: {e}"
+                    );
+                    last_err = Some(format!("{url}: {e}"));
+                    continue;
+                }
+            }
         }
 
         if status == StatusCode::NOT_FOUND || status == StatusCode::METHOD_NOT_ALLOWED {
@@ -108,22 +178,25 @@ pub async fn fetch_models(
         }
 
         let body = truncate_body(response.text().await.unwrap_or_default());
-        return Err(format!("HTTP {status}: {body}"));
+        let err = format!("HTTP {status}: {body}");
+        log::warn!("[ModelFetch] try GET {url} -> {err}");
+        return Err(err);
     }
 
-    Err(format!(
+    let err = format!(
         "All candidates failed: {}",
         last_err.unwrap_or_else(|| "no candidates".to_string())
-    ))
+    );
+    log::warn!("[ModelFetch] {err}");
+    Err(err)
 }
 
 /// 构造「模型列表端点」的候选 URL 列表
 ///
-/// 候选顺序：
-/// 1. `models_url_override` 非空 → 只返回它
-/// 2. baseURL 直接拼 `/v1/models`（若已有 `/v1` 结尾则拼 `/models`）
-/// 3. 若 baseURL 命中 [`KNOWN_COMPAT_SUFFIXES`]，剥离后缀再拼 `/v1/models`
-/// 4. 同上，但拼 `/models`（部分站点如 DeepSeek 官方只暴露 `/models`）
+/// 候选顺序（无 override 时）：
+/// 1. 若 baseURL 命中 [`KNOWN_COMPAT_SUFFIXES`]：先 `strip/v1/models`、`strip/models`，再 `base/v1/models`
+///    （NewAPI 等网关根上的列表常为 OpenAI JSON；`/claude/v1/models` 可能返回非列表形态）
+/// 2. 无兼容后缀：仅 `base/v1/models`（或已以 `/v1` 结尾则 `base/models`）
 ///
 /// 结果已去重且保持首次出现顺序。
 pub fn build_models_url_candidates(
@@ -165,7 +238,6 @@ pub fn build_models_url_candidates(
     } else {
         format!("{trimmed}/v1/models")
     };
-    candidates.push(primary);
 
     if let Some(stripped) = strip_compat_suffix(trimmed) {
         let root = stripped.trim_end_matches('/');
@@ -174,6 +246,7 @@ pub fn build_models_url_candidates(
             candidates.push(format!("{root}/models"));
         }
     }
+    candidates.push(primary);
 
     // 候选最多 3 条，线性去重即可，不值得上 HashSet。
     let mut unique: Vec<String> = Vec::with_capacity(candidates.len());
@@ -213,6 +286,26 @@ fn strip_compat_suffix(base_url: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::provider::normalize_legacy_nexuskey_gateway_url;
+
+    #[test]
+    fn legacy_api_nexuskey_host_maps_for_model_fetch_candidates() {
+        let base = normalize_legacy_nexuskey_gateway_url("https://api.nexuskey.ai/claude");
+        assert_eq!(base, "https://nexuskey.eu.cc/claude");
+        let c = build_models_url_candidates(&base, false, None).unwrap();
+        assert!(c.iter().all(|url| url.contains("nexuskey.eu.cc")));
+        assert!(!c.iter().any(|url| url.contains("api.nexuskey.ai")));
+    }
+
+    #[test]
+    fn nexuskey_codex_base_url_path_preserved_after_legacy_host_migration() {
+        let base = normalize_legacy_nexuskey_gateway_url("https://api.nexuskey.ai/codex/v1");
+        assert_eq!(base.as_str(), "https://nexuskey.eu.cc/codex/v1");
+        assert!(
+            base.contains("/codex/"),
+            "Codex OpenAI base must keep /codex/v1 path"
+        );
+    }
 
     #[test]
     fn test_candidates_plain_root() {
@@ -273,9 +366,9 @@ mod tests {
         assert_eq!(
             c,
             vec![
-                "https://api.deepseek.com/anthropic/v1/models",
                 "https://api.deepseek.com/v1/models",
                 "https://api.deepseek.com/models",
+                "https://api.deepseek.com/anthropic/v1/models",
             ]
         );
     }
@@ -287,9 +380,9 @@ mod tests {
         assert_eq!(
             c,
             vec![
-                "https://open.bigmodel.cn/api/anthropic/v1/models",
                 "https://open.bigmodel.cn/v1/models",
                 "https://open.bigmodel.cn/models",
+                "https://open.bigmodel.cn/api/anthropic/v1/models",
             ]
         );
     }
@@ -305,9 +398,9 @@ mod tests {
         assert_eq!(
             c,
             vec![
-                "https://dashscope.aliyuncs.com/apps/anthropic/v1/models",
                 "https://dashscope.aliyuncs.com/v1/models",
                 "https://dashscope.aliyuncs.com/models",
+                "https://dashscope.aliyuncs.com/apps/anthropic/v1/models",
             ]
         );
     }
@@ -319,9 +412,9 @@ mod tests {
         assert_eq!(
             c,
             vec![
-                "https://api.stepfun.com/step_plan/v1/models",
                 "https://api.stepfun.com/v1/models",
                 "https://api.stepfun.com/models",
+                "https://api.stepfun.com/step_plan/v1/models",
             ]
         );
     }
@@ -337,9 +430,9 @@ mod tests {
         assert_eq!(
             c,
             vec![
-                "https://ark.cn-beijing.volces.com/api/coding/v1/models",
                 "https://ark.cn-beijing.volces.com/v1/models",
                 "https://ark.cn-beijing.volces.com/models",
+                "https://ark.cn-beijing.volces.com/api/coding/v1/models",
             ]
         );
     }
@@ -350,9 +443,9 @@ mod tests {
         assert_eq!(
             c,
             vec![
-                "https://www.right.codes/claude/v1/models",
                 "https://www.right.codes/v1/models",
                 "https://www.right.codes/models",
+                "https://www.right.codes/claude/v1/models",
             ]
         );
     }
@@ -365,9 +458,9 @@ mod tests {
         assert_eq!(
             c,
             vec![
-                "https://api.z.ai/api/anthropic/v1/models",
                 "https://api.z.ai/v1/models",
                 "https://api.z.ai/models",
+                "https://api.z.ai/api/anthropic/v1/models",
             ]
         );
     }
@@ -388,8 +481,7 @@ mod tests {
     #[test]
     fn test_parse_response() {
         let json = r#"{"object":"list","data":[{"id":"gpt-4","object":"model","owned_by":"openai"},{"id":"claude-3-sonnet","object":"model","owned_by":"anthropic"}]}"#;
-        let resp: ModelsResponse = serde_json::from_str(json).unwrap();
-        let data = resp.data.unwrap();
+        let data = parse_models_response_bytes(json.as_bytes()).unwrap();
         assert_eq!(data.len(), 2);
         assert_eq!(data[0].id, "gpt-4");
         assert_eq!(data[0].owned_by.as_deref(), Some("openai"));
@@ -399,8 +491,7 @@ mod tests {
     #[test]
     fn test_parse_response_no_owned_by() {
         let json = r#"{"object":"list","data":[{"id":"my-model","object":"model"}]}"#;
-        let resp: ModelsResponse = serde_json::from_str(json).unwrap();
-        let data = resp.data.unwrap();
+        let data = parse_models_response_bytes(json.as_bytes()).unwrap();
         assert_eq!(data[0].id, "my-model");
         assert!(data[0].owned_by.is_none());
     }
@@ -408,7 +499,7 @@ mod tests {
     #[test]
     fn test_parse_response_empty_data() {
         let json = r#"{"object":"list","data":[]}"#;
-        let resp: ModelsResponse = serde_json::from_str(json).unwrap();
-        assert!(resp.data.unwrap().is_empty());
+        let data = parse_models_response_bytes(json.as_bytes()).unwrap();
+        assert!(data.is_empty());
     }
 }

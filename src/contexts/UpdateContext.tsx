@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import type { UpdateInfo, UpdateHandle } from "../lib/updater";
 import { checkForUpdate } from "../lib/updater";
+import { isManagedModeEnabled } from "@/config/managedMode";
 
 interface UpdateContextValue {
   // 更新状态
@@ -120,7 +121,10 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // 应用启动时自动检查更新
+  // managed 构建：发行方统一推送安装包，不使用上游 OTA，跳过自动检查避免
+  // 因 endpoint 不可达而在日志里持续报错。需要时仍可手动调用 checkUpdate。
   useEffect(() => {
+    if (isManagedModeEnabled()) return;
     // 延迟1秒后检查，避免影响启动体验
     const timer = setTimeout(() => {
       checkUpdate().catch(console.error);

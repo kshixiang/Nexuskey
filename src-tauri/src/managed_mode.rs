@@ -12,7 +12,7 @@ use std::path::PathBuf;
 pub const MANAGED_MODE: bool = true;
 
 pub const MANAGED_BRAND_NAME: &str = "NexusKey";
-pub const MANAGED_BRAND_URL: &str = "https://nexuskey.ai";
+pub const MANAGED_BRAND_URL: &str = "https://nexuskey.eu.cc";
 
 const MANAGED_CONFIG_FILE: &str = "managed-providers.json";
 const DEFAULT_MANAGED_CONFIG_JSON: &str =

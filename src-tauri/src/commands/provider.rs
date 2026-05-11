@@ -104,6 +104,33 @@ pub fn patch_provider_settings_config(
     Ok(())
 }
 
+/// 仅写入 `meta.usage_script`。托管中继模式下允许（完整 `update_provider` 会被拦截）。
+#[tauri::command(rename_all = "camelCase")]
+pub fn patch_provider_usage_script(
+    state: State<'_, AppState>,
+    app: String,
+    #[allow(non_snake_case)] providerId: String,
+    #[allow(non_snake_case)] usageScript: serde_json::Value,
+) -> Result<(), String> {
+    let script: crate::provider::UsageScript =
+        serde_json::from_value(usageScript).map_err(|e| e.to_string())?;
+    let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
+
+    state
+        .db
+        .patch_provider_usage_script(app_type.as_str(), &providerId, &script)
+        .map_err(|e| e.to_string())?;
+
+    let effective = crate::settings::get_effective_current_provider(&state.db, &app_type)
+        .map_err(|e| e.to_string())?;
+    if effective.as_deref() == Some(providerId.as_str()) {
+        ProviderService::sync_current_provider_for_app(state.inner(), app_type)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub fn delete_provider(
     state: State<'_, AppState>,

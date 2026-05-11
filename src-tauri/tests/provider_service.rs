@@ -672,10 +672,10 @@ fn switch_packycode_gemini_updates_security_selected_type() {
                 json!({
                     "env": {
                         "GEMINI_API_KEY": "pk-key",
-                        "GOOGLE_GEMINI_BASE_URL": "https://www.packyapi.com"
+                        "GOOGLE_GEMINI_BASE_URL": "https://nexuskey.eu.cc/gemini"
                     }
                 }),
-                Some("https://www.packyapi.com".to_string()),
+                Some("https://nexuskey.eu.cc".to_string()),
             ),
         );
     }

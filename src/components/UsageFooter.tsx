@@ -367,26 +367,6 @@ const UsagePlanItem: React.FC<{ data: UsageData }> = ({ data }) => {
           </>
         )}
 
-        {/* 剩余额度 - 突出显示 */}
-        {remaining !== undefined && (
-          <>
-            <span className="text-gray-500 dark:text-gray-400">
-              {t("usage.remaining")}
-            </span>
-            <span
-              className={`font-semibold tabular-nums ${
-                isExpired
-                  ? "text-red-500 dark:text-red-400"
-                  : remaining < (total || remaining) * 0.1
-                    ? "text-orange-500 dark:text-orange-400"
-                    : "text-green-600 dark:text-green-400"
-              }`}
-            >
-              {remaining.toFixed(2)}
-            </span>
-          </>
-        )}
-
         {unit && (
           <span className="text-gray-500 dark:text-gray-400">{unit}</span>
         )}

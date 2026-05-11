@@ -67,7 +67,7 @@ export const universalProviderPresets: UniversalProviderPreset[] = [
       gemini: true,
     },
     defaultModels: NEWAPI_DEFAULT_MODELS,
-    websiteUrl: "https://www.newapi.pro",
+    websiteUrl: "https://nexuskey.eu.cc",
     icon: "newapi",
     iconColor: "#00A67E",
     description:

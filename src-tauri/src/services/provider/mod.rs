@@ -26,6 +26,10 @@ pub use live::{
 };
 
 // Internal re-exports (pub(crate))
+pub(crate) use usage::{
+    models_list_credentials, normalize_legacy_nexuskey_gateway_url,
+    normalize_legacy_nexuskey_urls_in_provider_settings,
+};
 pub(crate) use live::sanitize_claude_settings_for_live;
 pub(crate) use live::{
     build_effective_settings_with_common_config, normalize_provider_common_config_for_storage,
@@ -1000,6 +1004,7 @@ impl ProviderService {
         add_to_live: bool,
     ) -> Result<bool, AppError> {
         let mut provider = provider;
+        normalize_legacy_nexuskey_urls_in_provider_settings(&app_type, &mut provider.settings_config);
         // Normalize Claude model keys
         Self::normalize_provider_if_claude(&app_type, &mut provider);
         Self::validate_provider_settings(&app_type, &provider)?;
@@ -1049,6 +1054,7 @@ impl ProviderService {
         provider: Provider,
     ) -> Result<bool, AppError> {
         let mut provider = provider;
+        normalize_legacy_nexuskey_urls_in_provider_settings(&app_type, &mut provider.settings_config);
         let original_id = original_id.unwrap_or(provider.id.as_str()).to_string();
         let provider_id_changed = original_id != provider.id;
         let existing_provider = state
@@ -2491,6 +2497,10 @@ impl ProviderService {
                 Self::merge_json(&mut merged, &claude_provider.settings_config);
                 claude_provider.settings_config = merged;
             }
+            normalize_legacy_nexuskey_urls_in_provider_settings(
+                &AppType::Claude,
+                &mut claude_provider.settings_config,
+            );
             state.db.save_provider("claude", &claude_provider)?;
         } else {
             // 如果禁用了 Claude，删除对应的子供应商
@@ -2506,6 +2516,10 @@ impl ProviderService {
                 Self::merge_json(&mut merged, &codex_provider.settings_config);
                 codex_provider.settings_config = merged;
             }
+            normalize_legacy_nexuskey_urls_in_provider_settings(
+                &AppType::Codex,
+                &mut codex_provider.settings_config,
+            );
             state.db.save_provider("codex", &codex_provider)?;
         } else {
             let codex_id = format!("universal-codex-{id}");
@@ -2520,6 +2534,10 @@ impl ProviderService {
                 Self::merge_json(&mut merged, &gemini_provider.settings_config);
                 gemini_provider.settings_config = merged;
             }
+            normalize_legacy_nexuskey_urls_in_provider_settings(
+                &AppType::Gemini,
+                &mut gemini_provider.settings_config,
+            );
             state.db.save_provider("gemini", &gemini_provider)?;
         } else {
             let gemini_id = format!("universal-gemini-{id}");

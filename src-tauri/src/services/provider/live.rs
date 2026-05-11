@@ -25,6 +25,10 @@ use super::normalize_claude_models_in_value;
 
 pub(crate) fn sanitize_claude_settings_for_live(settings: &Value) -> Value {
     let mut v = settings.clone();
+    super::usage::normalize_legacy_nexuskey_urls_in_provider_settings(
+        &AppType::Claude,
+        &mut v,
+    );
     if let Some(obj) = v.as_object_mut() {
         // Internal-only fields - never write to Claude Code settings.json
         obj.remove("api_format");
@@ -517,6 +521,10 @@ pub(crate) fn write_live_with_common_config(
     let mut effective_provider = provider.clone();
     effective_provider.settings_config =
         build_effective_settings_with_common_config(db, app_type, provider)?;
+    super::usage::normalize_legacy_nexuskey_urls_in_provider_settings(
+        app_type,
+        &mut effective_provider.settings_config,
+    );
 
     write_live_snapshot(app_type, &effective_provider)
 }

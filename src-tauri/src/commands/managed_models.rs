@@ -282,8 +282,84 @@ fn extract_model_state(app_type: &AppType, provider: &crate::provider::Provider)
     }
 }
 
+fn is_placeholder_api_key(key: &str) -> bool {
+    let k = key.trim();
+    k.is_empty() || k.starts_with("YOUR_")
+}
+
+/// 托管主界面：用当前供应商配置里的 Base URL + API Key 请求 OpenAI 兼容 `/v1/models`，
+/// 替代仅 `managed-providers` 里固定的几条 `modelOptions`。
+async fn try_live_openai_model_options_claude(
+    provider: &crate::provider::Provider,
+    configured: &[ManagedModelOption],
+) -> Option<Vec<ManagedModelOption>> {
+    let (base_url, api_key) = crate::services::provider::models_list_credentials(provider)?;
+    if is_placeholder_api_key(&api_key) {
+        return None;
+    }
+    let is_full_url = provider
+        .meta
+        .as_ref()
+        .and_then(|m| m.is_full_url)
+        .unwrap_or(false);
+    let models = match crate::services::model_fetch::fetch_models(
+        &base_url,
+        &api_key,
+        is_full_url,
+        None,
+    )
+    .await
+    {
+        Ok(m) => m,
+        Err(e) => {
+            log::warn!("[ManagedModel] GET /v1/models failed, fallback to static list: {e}");
+            return None;
+        }
+    };
+    if models.is_empty() {
+        return None;
+    }
+    let mut opts: Vec<ManagedModelOption> = models
+        .into_iter()
+        .map(|m| ManagedModelOption {
+            id: m.id,
+            name: None,
+        })
+        .collect();
+    for opt in &mut opts {
+        if let Some(cfg) = configured.iter().find(|c| c.id == opt.id) {
+            opt.name = cfg.name.clone();
+        }
+    }
+    Some(opts)
+}
+
+async fn compose_managed_model_state(
+    app_type: &AppType,
+    provider: &crate::provider::Provider,
+    config_entry: &crate::managed_mode::ManagedProviderEntry,
+) -> ManagedModelState {
+    let configured = model_options_from_config(config_entry);
+    let mut model_state = extract_model_state(app_type, provider);
+
+    if matches!(app_type, AppType::Claude) {
+        if let Some(live) = try_live_openai_model_options_claude(provider, &configured).await {
+            model_state.options = live;
+        } else if !configured.is_empty() {
+            model_state.options = configured;
+        }
+    } else if !configured.is_empty() {
+        model_state.options = configured;
+    }
+
+    if model_state.selected_model.is_none() {
+        model_state.selected_model = model_state.options.first().map(|v| v.id.clone());
+    }
+    model_state
+}
+
 #[tauri::command]
-pub fn get_managed_model_state(
+pub async fn get_managed_model_state(
     state: State<'_, AppState>,
     app: String,
 ) -> Result<ManagedModelState, String> {
@@ -291,15 +367,9 @@ pub fn get_managed_model_state(
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
     let provider = get_provider_for_app(state.inner(), &app_type).map_err(|e| e.to_string())?;
     let config_entry = get_config_entry(&app_type).map_err(|e| e.to_string())?;
-    let mut state = extract_model_state(&app_type, &provider);
-    let configured = model_options_from_config(&config_entry);
-    if !configured.is_empty() {
-        state.options = configured;
-        if state.selected_model.is_none() {
-            state.selected_model = state.options.first().map(|v| v.id.clone());
-        }
-    }
-    Ok(state)
+    Ok(
+        compose_managed_model_state(&app_type, &provider, &config_entry).await,
+    )
 }
 
 fn update_claude_model(settings: &mut Value, model: &str) {
@@ -361,7 +431,7 @@ fn update_hermes_model(provider_id: &str, provider: &crate::provider::Provider, 
 }
 
 #[tauri::command]
-pub fn set_managed_model(
+pub async fn set_managed_model(
     state: State<'_, AppState>,
     app: String,
     model: String,
@@ -370,14 +440,9 @@ pub fn set_managed_model(
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
     let provider = get_provider_for_app(state.inner(), &app_type).map_err(|e| e.to_string())?;
     let config_entry = get_config_entry(&app_type).map_err(|e| e.to_string())?;
-    let mut model_state = extract_model_state(&app_type, &provider);
-    let configured = model_options_from_config(&config_entry);
-    if !configured.is_empty() {
-        model_state.options = configured;
-        if model_state.selected_model.is_none() {
-            model_state.selected_model = model_state.options.first().map(|v| v.id.clone());
-        }
-    }
+
+    let model_state =
+        compose_managed_model_state(&app_type, &provider, &config_entry).await;
 
     if !model_state.options.iter().any(|item| item.id == model) {
         return Err(format!("Model '{}' is not configured for {}", model, app_type.as_str()));
@@ -429,7 +494,8 @@ pub fn set_managed_model(
     crate::managed_mode::update_selected_model(&app_type, &model).map_err(|e| e.to_string())?;
 
     let provider = get_provider_for_app(state.inner(), &app_type).map_err(|e| e.to_string())?;
-    let mut next_state = extract_model_state(&app_type, &provider);
+    let mut next_state =
+        compose_managed_model_state(&app_type, &provider, &config_entry).await;
     next_state.selected_model = Some(model);
     Ok(next_state)
 }

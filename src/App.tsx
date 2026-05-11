@@ -22,7 +22,11 @@ import {
   Wallet,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Provider, VisibleApps } from "@/types";
+import type { Provider, UsageScript, VisibleApps } from "@/types";
+import {
+  NEW_API_BALANCE_SCRIPT,
+  isLegacyNewApiUserSelfScript,
+} from "@/lib/usageScriptTemplates";
 import type { EnvConflict } from "@/types/env";
 import { useProvidersQuery, useSettingsQuery } from "@/lib/query";
 import {
@@ -84,6 +88,7 @@ import AgentsDefaultsPanel from "@/components/openclaw/AgentsDefaultsPanel";
 import OpenClawHealthBanner from "@/components/openclaw/OpenClawHealthBanner";
 import HermesMemoryPanel from "@/components/hermes/HermesMemoryPanel";
 import {
+  getManagedNewApiPanelUrl,
   getManagedRechargeUrl,
   isManagedModeEnabled,
   MANAGED_APP_TITLE,
@@ -96,6 +101,7 @@ import {
   getApiKeyFromConfig,
   setApiKeyInConfig,
 } from "@/utils/providerConfigUtils";
+import { verifyProviderConnectionBeforeEnable } from "@/utils/providerEnablePreflight";
 
 const APPS_WITH_DASHBOARD_API_KEY: readonly AppId[] = [
   "claude",
@@ -338,6 +344,7 @@ function App() {
     updateProvider,
     switchProvider,
     saveUsageScript,
+    isLoading: isProviderActionLoading,
   } = useProviderActions(
     activeApp,
     isProxyRunning,
@@ -784,11 +791,11 @@ function App() {
       (usageSummaryToday.totalCacheReadTokens ?? 0)
     );
   }, [usageSummaryToday]);
-  const providerIndexLabel = useMemo(() => {
-    if (!primaryProvider) return "00";
-    const index = providerEntries.findIndex((p) => p.id === primaryProvider.id);
-    return String(Math.max(0, index) + 1).padStart(2, "0");
-  }, [primaryProvider, providerEntries]);
+  // 记录当前会话已经触发过自动迁移的供应商 ID，避免「写入 -> 触发依赖更新
+  // -> 再次写入」循环；保存失败也不会无限重试，由用户手动 Modal 兜底。
+  const autoEnabledProviderIdsRef = useRef<Set<string>>(new Set());
+  /** 主页「开启」：GET /v1/models 探活进行中 */
+  const [enablePreflighting, setEnablePreflighting] = useState(false);
 
   const persistedDashboardApiKey = useMemo(() => {
     if (!primaryProvider) return "";
@@ -800,6 +807,78 @@ function App() {
   useEffect(() => {
     setDashboardApiKeyDraft(persistedDashboardApiKey);
   }, [persistedDashboardApiKey, primaryProvider?.id]);
+
+  // managed 模式下：用户在主界面填了真实 sk-xxx 后应当「秒看余额」，不该再要求
+  // 他点开「用量查询」面板手动启用。在以下两种情况下静默写入一份默认的 New
+  // API 余额脚本（enabled: true）：
+  //   1) provider 完全没有 usage_script
+  //   2) 旧用户的 usage_script 卡在 `/api/user/self`（旧版本 New API 模板）
+  // 两种都是「不可能正常工作」的状态，自动迁移不会破坏用户已表达的意图。
+  useEffect(() => {
+    if (!managedMode || !primaryProvider) return;
+    if (!persistedDashboardApiKey) return;
+    if (
+      persistedDashboardApiKey === "YOUR_NEXUSKEY_API_KEY" ||
+      persistedDashboardApiKey.startsWith("YOUR_")
+    )
+      return;
+
+    const existing = primaryProvider.meta?.usage_script;
+    const isMissing = !existing;
+    const isLegacyNewApi =
+      existing?.templateType === "newapi" &&
+      isLegacyNewApiUserSelfScript(existing?.code);
+
+    if (!isMissing && !isLegacyNewApi) return;
+    if (autoEnabledProviderIdsRef.current.has(primaryProvider.id)) return;
+    autoEnabledProviderIdsRef.current.add(primaryProvider.id);
+
+    const next: UsageScript = {
+      enabled: true,
+      language: "javascript",
+      code: NEW_API_BALANCE_SCRIPT,
+      templateType: "newapi",
+      baseUrl: getManagedNewApiPanelUrl() || existing?.baseUrl || undefined,
+      timeout: existing?.timeout ?? 10,
+      autoQueryInterval: existing?.autoQueryInterval ?? 5,
+    };
+
+    void (async () => {
+      try {
+        if (isManagedModeEnabled()) {
+          await providersApi.patchUsageScript(
+            primaryProvider.id,
+            next,
+            activeApp,
+          );
+        } else {
+          const updated: Provider = {
+            ...primaryProvider,
+            meta: {
+              ...primaryProvider.meta,
+              usage_script: next,
+            },
+          };
+          await providersApi.update(updated, activeApp);
+        }
+        await queryClient.invalidateQueries({
+          queryKey: ["providers", activeApp],
+        });
+        await queryClient.invalidateQueries({
+          queryKey: ["usage", primaryProvider.id, activeApp],
+        });
+      } catch (err) {
+        console.warn("[balance] auto-enable usage script failed", err);
+        autoEnabledProviderIdsRef.current.delete(primaryProvider.id);
+      }
+    })();
+  }, [
+    managedMode,
+    primaryProvider,
+    persistedDashboardApiKey,
+    activeApp,
+    queryClient,
+  ]);
 
   const showDashboardApiKey =
     Boolean(primaryProvider) &&
@@ -838,6 +917,9 @@ function App() {
         );
       }
       await queryClient.invalidateQueries({ queryKey: ["providers", activeApp] });
+      await queryClient.invalidateQueries({
+        queryKey: ["managed-model-state", activeApp],
+      });
       toast.success(
         t("provider.apiKeySaved", { defaultValue: "API Key 已保存" }),
         { duration: 2500 },
@@ -1074,16 +1156,7 @@ function App() {
                           )}
                         </div>
 
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                          <div className="rounded-xl border border-border/80 bg-card px-4 py-3">
-                            <div className="text-xs text-muted-foreground">
-                              {t("provider.index", { defaultValue: "供应商编号" })}
-                            </div>
-                            <div className="mt-2 text-[22px] font-semibold tabular-nums text-foreground">
-                              {providerIndexLabel}
-                            </div>
-                          </div>
-
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                           <div className="rounded-xl border border-border/80 bg-card px-4 py-3">
                             <div className="text-xs text-muted-foreground">
                               {t("usage.totalTokens", { defaultValue: "总Token数" })}
@@ -1215,7 +1288,11 @@ function App() {
                                       })
                                 }
                                 icon={Power}
-                                disabled={!primaryProvider}
+                                disabled={
+                                  !primaryProvider ||
+                                  enablePreflighting ||
+                                  isProviderActionLoading
+                                }
                                 onClick={async () => {
                                   if (!primaryProvider) return;
                                   if (primaryProviderActive) {
@@ -1236,7 +1313,19 @@ function App() {
                                       );
                                     }
                                   } else {
-                                    await switchProvider(primaryProvider);
+                                    setEnablePreflighting(true);
+                                    try {
+                                      const ok =
+                                        await verifyProviderConnectionBeforeEnable(
+                                          primaryProvider,
+                                          activeApp,
+                                          t,
+                                        );
+                                      if (!ok) return;
+                                      await switchProvider(primaryProvider);
+                                    } finally {
+                                      setEnablePreflighting(false);
+                                    }
                                   }
                                 }}
                               />

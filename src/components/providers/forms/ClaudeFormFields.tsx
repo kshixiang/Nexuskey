@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,6 +54,13 @@ import {
   providerPresets,
   type TemplateValueConfig,
 } from "@/config/claudeProviderPresets";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+
+function maskSecretForLog(value: string): string {
+  const s = value.trim();
+  if (s.length <= 8) return "***";
+  return `${s.slice(0, 4)}…${s.slice(-4)}`;
+}
 
 interface EndpointCandidate {
   url: string;
@@ -206,41 +213,114 @@ export function ClaudeFormFields({
   // 通用模型获取（非 Copilot 供应商）
   const [fetchedModels, setFetchedModels] = useState<FetchedModel[]>([]);
   const [isFetchingModels, setIsFetchingModels] = useState(false);
+  const modelFetchGenRef = useRef(0);
+
+  const debouncedApiKey = useDebouncedValue(apiKey.trim(), 600);
+  const debouncedBaseUrl = useDebouncedValue(baseUrl.trim(), 600);
+
+  const performFetchModels = useCallback(
+    (opts?: { silentToast?: boolean }) => {
+      if (!baseUrl?.trim() || !apiKey?.trim()) {
+        if (!opts?.silentToast) {
+          showFetchModelsError(null, t, {
+            hasApiKey: !!apiKey?.trim(),
+            hasBaseUrl: !!baseUrl?.trim(),
+          });
+        }
+        return;
+      }
+      const matchedPreset = providerPresets.find((p) => {
+        const env = (p.settingsConfig as { env?: Record<string, string> })?.env;
+        return env?.ANTHROPIC_BASE_URL === baseUrl;
+      });
+      const modelsUrl = matchedPreset?.modelsUrl;
+
+      const gen = ++modelFetchGenRef.current;
+      setIsFetchingModels(true);
+      console.warn("[ModelFetch] request", {
+        baseUrl: baseUrl.trim(),
+        isFullUrl,
+        modelsUrl: modelsUrl ?? null,
+        silentToast: opts?.silentToast ?? false,
+        apiKey: maskSecretForLog(apiKey),
+      });
+      fetchModelsForConfig(baseUrl, apiKey, isFullUrl, modelsUrl)
+        .then((models) => {
+          if (gen !== modelFetchGenRef.current) {
+            console.warn("[ModelFetch] ignored (stale)", { gen });
+            return;
+          }
+          console.warn("[ModelFetch] success", {
+            count: models.length,
+            baseUrl: baseUrl.trim(),
+            silentToast: opts?.silentToast ?? false,
+          });
+          setFetchedModels(models);
+          if (opts?.silentToast) return;
+          if (models.length === 0) {
+            toast.info(t("providerForm.fetchModelsEmpty"));
+          } else {
+            toast.success(
+              t("providerForm.fetchModelsSuccess", { count: models.length }),
+            );
+          }
+        })
+        .catch((err) => {
+          if (gen !== modelFetchGenRef.current) return;
+          console.warn("[ModelFetch] failed", {
+            baseUrl: baseUrl.trim(),
+            silentToast: opts?.silentToast ?? false,
+            error: String(err),
+          });
+          if (!opts?.silentToast) {
+            showFetchModelsError(err, t);
+          }
+        })
+        .finally(() => {
+          if (gen === modelFetchGenRef.current) {
+            setIsFetchingModels(false);
+          }
+        });
+    },
+    [apiKey, baseUrl, isFullUrl, t],
+  );
 
   const handleFetchModels = useCallback(() => {
-    if (!baseUrl || !apiKey) {
-      showFetchModelsError(null, t, {
-        hasApiKey: !!apiKey,
-        hasBaseUrl: !!baseUrl,
-      });
+    performFetchModels();
+  }, [performFetchModels]);
+
+  const performFetchModelsRef = useRef(performFetchModels);
+  performFetchModelsRef.current = performFetchModels;
+
+  // 输入 Base URL / API Key 结束后自动拉取模型列表（防抖由 debounced* 保证）
+  useEffect(() => {
+    if (
+      isCopilotPreset ||
+      !shouldShowModelSelector ||
+      usesOAuth ||
+      !shouldShowApiKey
+    ) {
       return;
     }
-    // 当 baseURL 仍是某预设的默认值时，优先使用预设上的 modelsUrl 覆写
-    // 避免多走一次失败的候选请求（如 DeepSeek 把 /models 挂在根，而不是 /anthropic 子路径下）
-    const matchedPreset = providerPresets.find((p) => {
-      const env = (p.settingsConfig as { env?: Record<string, string> })?.env;
-      return env?.ANTHROPIC_BASE_URL === baseUrl;
-    });
-    const modelsUrl = matchedPreset?.modelsUrl;
-
-    setIsFetchingModels(true);
-    fetchModelsForConfig(baseUrl, apiKey, isFullUrl, modelsUrl)
-      .then((models) => {
-        setFetchedModels(models);
-        if (models.length === 0) {
-          toast.info(t("providerForm.fetchModelsEmpty"));
-        } else {
-          toast.success(
-            t("providerForm.fetchModelsSuccess", { count: models.length }),
-          );
-        }
-      })
-      .catch((err) => {
-        console.warn("[ModelFetch] Failed:", err);
-        showFetchModelsError(err, t);
-      })
-      .finally(() => setIsFetchingModels(false));
-  }, [baseUrl, apiKey, isFullUrl, t]);
+    if (!debouncedBaseUrl || !debouncedApiKey) {
+      setFetchedModels([]);
+      return;
+    }
+    // 避免 Key 未输完就请求（减少无效请求与错误 toast）
+    if (debouncedApiKey.length < 12) {
+      setFetchedModels([]);
+      return;
+    }
+    performFetchModelsRef.current({ silentToast: true });
+  }, [
+    debouncedApiKey,
+    debouncedBaseUrl,
+    isCopilotPreset,
+    isFullUrl,
+    shouldShowApiKey,
+    shouldShowModelSelector,
+    usesOAuth,
+  ]);
 
   // 当 Copilot 预设且已认证时，加载可用模型
   useEffect(() => {
@@ -370,6 +450,7 @@ export function ClaudeFormFields({
         placeholder={placeholder}
         fetchedModels={fetchedModels}
         isLoading={isFetchingModels}
+        onFetch={handleFetchModels}
       />
     );
   };

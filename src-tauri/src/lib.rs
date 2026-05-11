@@ -1068,6 +1068,7 @@ pub fn run() {
               commands::add_provider,
             commands::update_provider,
             commands::patch_provider_settings_config,
+            commands::patch_provider_usage_script,
             commands::delete_provider,
             commands::remove_provider_from_live_config,
               commands::switch_provider,

@@ -4,6 +4,7 @@ import type {
   Provider,
   UniversalProvider,
   UniversalProvidersMap,
+  UsageScript,
 } from "@/types";
 import type { AppId } from "./types";
 
@@ -64,6 +65,19 @@ export const providersApi = {
       app: appId,
       providerId,
       settingsConfig,
+    });
+  },
+
+  /** `meta.usage_script` only; allowed in managed relay mode (full `update` is blocked). */
+  async patchUsageScript(
+    providerId: string,
+    usageScript: UsageScript,
+    appId: AppId,
+  ): Promise<void> {
+    await invoke("patch_provider_usage_script", {
+      app: appId,
+      providerId,
+      usageScript,
     });
   },
 

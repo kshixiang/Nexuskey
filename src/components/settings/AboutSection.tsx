@@ -24,6 +24,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { settingsApi } from "@/lib/api";
 import { useUpdate } from "@/contexts/UpdateContext";
 import { relaunchApp } from "@/lib/updater";
+import { isManagedModeEnabled } from "@/config/managedMode";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import appIcon from "@/assets/icons/app-icon.png";
@@ -359,52 +360,56 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleOpenReleaseNotes}
-              className="h-8 gap-1.5 text-xs"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              {t("settings.releaseNotes")}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleCheckUpdate}
-              disabled={isChecking || isDownloading}
-              className="h-8 gap-1.5 text-xs"
-            >
-              {isDownloading ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  {t("settings.updating")}
-                </>
-              ) : hasUpdate ? (
-                <>
-                  <Download className="h-3.5 w-3.5" />
-                  {t("settings.updateTo", {
-                    version: updateInfo?.availableVersion ?? "",
-                  })}
-                </>
-              ) : isChecking ? (
-                <>
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                  {t("settings.checking")}
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  {t("settings.checkForUpdates")}
-                </>
-              )}
-            </Button>
-          </div>
+          {/* managed 构建：发行方统一推送安装包，应用内不暴露上游更新检查按钮，
+              避免误导用户去访问 endpoint 不可达的 OTA 更新清单。 */}
+          {!isManagedModeEnabled() && (
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleOpenReleaseNotes}
+                className="h-8 gap-1.5 text-xs"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                {t("settings.releaseNotes")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleCheckUpdate}
+                disabled={isChecking || isDownloading}
+                className="h-8 gap-1.5 text-xs"
+              >
+                {isDownloading ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    {t("settings.updating")}
+                  </>
+                ) : hasUpdate ? (
+                  <>
+                    <Download className="h-3.5 w-3.5" />
+                    {t("settings.updateTo", {
+                      version: updateInfo?.availableVersion ?? "",
+                    })}
+                  </>
+                ) : isChecking ? (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    {t("settings.checking")}
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    {t("settings.checkForUpdates")}
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </div>
 
-        {hasUpdate && updateInfo && (
+        {!isManagedModeEnabled() && hasUpdate && updateInfo && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}

@@ -34,7 +34,7 @@ export function ModelInputWithFetch({
 }: ModelInputWithFetchProps) {
   const { t } = useTranslation();
 
-  // 有模型数据: Input + DropdownMenu
+  // 有模型数据: Input + DropdownMenu（可选：再显示重新获取按钮，避免换 Key 后仍显示旧列表）
   if (fetchedModels.length > 0) {
     const grouped: Record<string, FetchedModel[]> = {};
     for (const model of fetchedModels) {
@@ -81,6 +81,23 @@ export function ModelInputWithFetch({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        {onFetch ? (
+          <Button
+            variant="outline"
+            size="icon"
+            className="shrink-0"
+            type="button"
+            onClick={onFetch}
+            disabled={isLoading}
+            title={t("providerForm.fetchModels")}
+          >
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+          </Button>
+        ) : null}
       </div>
     );
   }
