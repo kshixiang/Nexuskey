@@ -297,6 +297,13 @@ pub struct AppSettings {
     /// - Linux: "gnome-terminal" | "konsole" | "xfce4-terminal" | "alacritty" | "kitty" | "ghostty"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_terminal: Option<String>,
+
+    /// 全局用量查询用户 ID（脚本中 `{{userId}}` 等，在供应商用量脚本未填写时回退）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_query_user_id: Option<String>,
+    /// 全局系统访问令牌（脚本中 `{{accessToken}}` 等，在供应商用量脚本未填写时回退）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_query_access_token: Option<String>,
 }
 
 fn default_show_in_tray() -> bool {
@@ -348,6 +355,8 @@ impl Default for AppSettings {
             backup_interval_hours: None,
             backup_retain_count: None,
             preferred_terminal: None,
+            usage_query_user_id: None,
+            usage_query_access_token: None,
         }
     }
 }
@@ -410,6 +419,20 @@ impl AppSettings {
             .as_ref()
             .map(|s| s.trim())
             .filter(|s| matches!(*s, "en" | "zh" | "ja"))
+            .map(|s| s.to_string());
+
+        self.usage_query_user_id = self
+            .usage_query_user_id
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
+        self.usage_query_access_token = self
+            .usage_query_access_token
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
 
         if let Some(sync) = &mut self.webdav_sync {

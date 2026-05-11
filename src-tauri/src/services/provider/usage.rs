@@ -131,6 +131,39 @@ fn extract_api_key_from_provider(provider: &crate::provider::Provider) -> Option
     None
 }
 
+fn extract_codex_base_url_from_toml(config_toml: &str) -> Option<String> {
+    let t = config_toml.trim();
+    if t.is_empty() {
+        return None;
+    }
+    // Simple string scan (same as other places in codebase): support single/double quotes.
+    if let Some(start) = t.find("base_url = \"") {
+        let rest = &t[start + 12..];
+        if let Some(end) = rest.find('"') {
+            return Some(rest[..end].trim().trim_end_matches('/').to_string());
+        }
+    }
+    if let Some(start) = t.find("base_url = '") {
+        let rest = &t[start + 12..];
+        if let Some(end) = rest.find('\'') {
+            return Some(rest[..end].trim().trim_end_matches('/').to_string());
+        }
+    }
+    None
+}
+
+fn normalize_nexuskey_codex_base_url(url: &str) -> String {
+    // First apply legacy host migration.
+    let t = normalize_legacy_nexuskey_gateway_url(url);
+    // Then normalize the Codex path: OpenAI-compatible base is rooted at /v1.
+    // If users/presets still have /codex/v1, collapse it to /v1 so /v1/models works.
+    let t = t.trim_end_matches('/').to_string();
+    if t == "https://nexuskey.eu.cc/codex/v1" || t.starts_with("https://nexuskey.eu.cc/codex/v1/") {
+        return "https://nexuskey.eu.cc/v1".to_string();
+    }
+    t
+}
+
 /// 旧网关域名统一为当前官方入口（本地库里仍可能存 `api.nexuskey.ai`）。
 pub(crate) fn normalize_legacy_nexuskey_gateway_url(url: &str) -> String {
     let t = url.trim().trim_end_matches('/');
@@ -300,10 +333,27 @@ fn extract_base_url_from_provider(provider: &crate::provider::Provider) -> Optio
 
 /// Base URL + API key for OpenAI-compatible `GET /v1/models`（托管主界面模型列表等）。
 pub fn models_list_credentials(provider: &crate::provider::Provider) -> Option<(String, String)> {
-    let base = extract_base_url_from_provider(provider)?;
+    // Codex base_url is stored in the TOML string; parse it here so managed UI can
+    // fetch OpenAI-compatible /v1/models (same path as Claude managed model selector).
+    let base = if let Some(config_toml) = provider
+        .settings_config
+        .get("config")
+        .and_then(|v| v.as_str())
+    {
+        extract_codex_base_url_from_toml(config_toml)
+            .map(|s| normalize_nexuskey_codex_base_url(&s))
+            .unwrap_or_else(|| extract_base_url_from_provider(provider).unwrap_or_default())
+    } else {
+        extract_base_url_from_provider(provider)?
+    };
+
     let key = extract_api_key_from_provider(provider)?;
     let key = key.trim().to_string();
     if key.is_empty() {
+        return None;
+    }
+    let base = base.trim().trim_end_matches('/').to_string();
+    if base.is_empty() {
         return None;
     }
     Some((base, key))
@@ -362,13 +412,35 @@ pub async fn query_usage(
             normalize_legacy_nexuskey_gateway_url(&raw)
         };
 
+        let global = settings::get_settings();
+        let access_token = usage_script
+            .access_token
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| {
+                global
+                    .usage_query_access_token
+                    .clone()
+                    .filter(|s| !s.trim().is_empty())
+            });
+        let user_id = usage_script
+            .user_id
+            .clone()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| {
+                global
+                    .usage_query_user_id
+                    .clone()
+                    .filter(|s| !s.trim().is_empty())
+            });
+
         (
             usage_script.code.clone(),
             usage_script.timeout.unwrap_or(10),
             api_key,
             base_url,
-            usage_script.access_token.clone(),
-            usage_script.user_id.clone(),
+            access_token,
+            user_id,
             usage_script.template_type.clone(),
         )
     };

@@ -75,6 +75,7 @@ import { SkillsPage } from "@/components/skills/SkillsPage";
 import UnifiedSkillsPanel from "@/components/skills/UnifiedSkillsPanel";
 import { DeepLinkImportDialog } from "@/components/DeepLinkImportDialog";
 import { FirstRunNoticeDialog } from "@/components/FirstRunNoticeDialog";
+import { ManagedUsageCredentialsDialog } from "@/components/ManagedUsageCredentialsDialog";
 import { CursorManualPanel } from "@/components/cursor/CursorManualPanel";
 import { AgentsPanel } from "@/components/agents/AgentsPanel";
 import { UniversalProviderPanel } from "@/components/universal";
@@ -1730,6 +1731,7 @@ function App() {
 
       <DeepLinkImportDialog />
       <FirstRunNoticeDialog />
+      <ManagedUsageCredentialsDialog />
     </div>
   );
 }

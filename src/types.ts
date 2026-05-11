@@ -333,6 +333,11 @@ export interface Settings {
   // Windows: "cmd" | "powershell" | "wt"
   // Linux: "gnome-terminal" | "konsole" | "xfce4-terminal" | "alacritty" | "kitty" | "ghostty"
   preferredTerminal?: string;
+
+  /** 全局用量查询用户 ID（供应商用量脚本未配置时作为 `{{userId}}` 等回退） */
+  usageQueryUserId?: string;
+  /** 全局系统访问令牌（供应商用量脚本未配置时作为 `{{accessToken}}` 等回退） */
+  usageQueryAccessToken?: string;
 }
 
 export interface SessionMeta {

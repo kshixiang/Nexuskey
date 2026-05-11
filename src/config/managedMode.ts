@@ -1,3 +1,5 @@
+// Managed provider seeding / UI integrations rely on this flag.
+// Keep it ON so managed providers are visible by default.
 export const MANAGED_MODE = true;
 
 export const MANAGED_APP_TITLE = "NexusKey";

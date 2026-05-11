@@ -3,6 +3,19 @@
     "title": "NexusKey",
     "description": "Claude Code・Codex・Gemini CLI のためのオールインワンアシスタント"
   },
+  "managedMode": {
+    "credentialsDialog": {
+      "title": "アカウント情報の入力",
+      "description": "利用状況の取得などに、ユーザー ID とシステムアクセストークンが必要です。両方を入力して保存してください。保存するまでこのダイアログは閉じられません。",
+      "userId": "ユーザー ID",
+      "accessToken": "システムアクセストークン",
+      "userIdPlaceholder": "必須",
+      "accessTokenPlaceholder": "必須",
+      "bothRequired": "ユーザー ID とシステムアクセストークンの両方を入力してください。",
+      "saved": "保存しました",
+      "saveFailed": "保存に失敗しました: {{error}}"
+    }
+  },
   "common": {
     "add": "追加",
     "edit": "編集",
@@ -913,7 +926,8 @@
     "fetchModelsAuthFailed": "API Key が無効か、権限がありません",
     "fetchModelsNotSupported": "このプロバイダーはモデル一覧の取得に対応していません",
     "fetchModelsEndpointNotFound": "利用可能なモデル一覧エンドポイントが見つかりません。Base URL を確認するか、プロバイダーが該当 API を公開しているかご確認ください",
-    "fetchModelsTimeout": "リクエストがタイムアウトしました。ネットワーク接続を確認してください"
+    "fetchModelsTimeout": "リクエストがタイムアウトしました。ネットワーク接続を確認してください",
+    "fetchModelsNetworkErrorContact": "ネットワーク接続エラーです。ネットワーク/プロキシ設定を確認して再試行してください。解決しない場合は QQ:1104213556 までご連絡ください"
   },
   "copilot": {
     "authSection": "GitHub Copilot 認証",

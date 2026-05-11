@@ -51,6 +51,7 @@ export function showFetchModelsError(
 
   // 解析后端错误字符串
   const msg = String(err);
+  const lower = msg.toLowerCase();
 
   if (msg.includes("HTTP 401") || msg.includes("HTTP 403")) {
     toast.error(t("providerForm.fetchModelsAuthFailed"));
@@ -67,6 +68,23 @@ export function showFetchModelsError(
   }
   if (msg.includes("timeout") || msg.includes("timed out")) {
     toast.error(t("providerForm.fetchModelsTimeout"));
+    return;
+  }
+
+  // 网络连接类错误：提示用户联系客服
+  if (
+    lower.includes("connection was reset") ||
+    lower.includes("recv failure") ||
+    lower.includes("transport error") ||
+    lower.includes("error sending request") ||
+    lower.includes("dns") ||
+    lower.includes("name or service not known") ||
+    lower.includes("failed to lookup address") ||
+    lower.includes("could not resolve") ||
+    lower.includes("connection refused") ||
+    lower.includes("network is unreachable")
+  ) {
+    toast.error(t("providerForm.fetchModelsNetworkErrorContact"));
     return;
   }
   if (msg.includes("Failed to parse")) {

@@ -21,6 +21,8 @@ pub struct ManagedModelState {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_model: Option<String>,
     pub options: Vec<ManagedModelOption>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 fn ensure_managed_mode() -> Result<(), String> {
@@ -115,6 +117,7 @@ fn extract_model_state(app_type: &AppType, provider: &crate::provider::Provider)
                 provider_id: provider.id.clone(),
                 selected_model: current,
                 options,
+                warnings: vec![],
             }
         }
         AppType::Codex => {
@@ -142,6 +145,7 @@ fn extract_model_state(app_type: &AppType, provider: &crate::provider::Provider)
                 provider_id: provider.id.clone(),
                 selected_model: current,
                 options,
+                warnings: vec![],
             }
         }
         AppType::Gemini => {
@@ -165,6 +169,7 @@ fn extract_model_state(app_type: &AppType, provider: &crate::provider::Provider)
                 provider_id: provider.id.clone(),
                 selected_model: current,
                 options,
+                warnings: vec![],
             }
         }
         AppType::OpenCode => {
@@ -190,6 +195,7 @@ fn extract_model_state(app_type: &AppType, provider: &crate::provider::Provider)
                 provider_id: provider.id.clone(),
                 selected_model,
                 options,
+                warnings: vec![],
             }
         }
         AppType::OpenClaw => {
@@ -220,6 +226,7 @@ fn extract_model_state(app_type: &AppType, provider: &crate::provider::Provider)
                 provider_id: provider.id.clone(),
                 selected_model,
                 options,
+                warnings: vec![],
             }
         }
         AppType::Hermes => {
@@ -250,6 +257,7 @@ fn extract_model_state(app_type: &AppType, provider: &crate::provider::Provider)
                 provider_id: provider.id.clone(),
                 selected_model,
                 options,
+                warnings: vec![],
             }
         }
         AppType::Cursor => {
@@ -277,6 +285,7 @@ fn extract_model_state(app_type: &AppType, provider: &crate::provider::Provider)
                 provider_id: provider.id.clone(),
                 selected_model: current,
                 options,
+                warnings: vec![],
             }
         }
     }
@@ -292,10 +301,13 @@ fn is_placeholder_api_key(key: &str) -> bool {
 async fn try_live_openai_model_options_claude(
     provider: &crate::provider::Provider,
     configured: &[ManagedModelOption],
-) -> Option<Vec<ManagedModelOption>> {
-    let (base_url, api_key) = crate::services::provider::models_list_credentials(provider)?;
+) -> Result<Option<Vec<ManagedModelOption>>, String> {
+    let Some((base_url, api_key)) = crate::services::provider::models_list_credentials(provider)
+    else {
+        return Ok(None);
+    };
     if is_placeholder_api_key(&api_key) {
-        return None;
+        return Ok(None);
     }
     let is_full_url = provider
         .meta
@@ -313,11 +325,11 @@ async fn try_live_openai_model_options_claude(
         Ok(m) => m,
         Err(e) => {
             log::warn!("[ManagedModel] GET /v1/models failed, fallback to static list: {e}");
-            return None;
+            return Err(e);
         }
     };
     if models.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut opts: Vec<ManagedModelOption> = models
         .into_iter()
@@ -331,7 +343,7 @@ async fn try_live_openai_model_options_claude(
             opt.name = cfg.name.clone();
         }
     }
-    Some(opts)
+    Ok(Some(opts))
 }
 
 async fn compose_managed_model_state(
@@ -341,12 +353,44 @@ async fn compose_managed_model_state(
 ) -> ManagedModelState {
     let configured = model_options_from_config(config_entry);
     let mut model_state = extract_model_state(app_type, provider);
+    model_state.warnings = vec![];
 
+    // 仅 Claude：托管网关的 Codex Base URL（…/codex/v1）上 /v1/models 常不可用或非 JSON；
+    // Codex 模型列表改用 managed-providers 的 model_options（与其它非 Claude 应用一致）。
     if matches!(app_type, AppType::Claude) {
-        if let Some(live) = try_live_openai_model_options_claude(provider, &configured).await {
-            model_state.options = live;
-        } else if !configured.is_empty() {
-            model_state.options = configured;
+        match try_live_openai_model_options_claude(provider, &configured).await {
+            Ok(Some(live)) => {
+                model_state.options = live;
+            }
+            Ok(None) => {
+                if !configured.is_empty() {
+                    model_state.options = configured;
+                }
+            }
+            Err(e) => {
+                // Surface a warning to frontend so users can see why it fell back.
+                // Keep it as a machine-readable prefix so frontend can map to i18n.
+                if e.contains("HTTP 403") {
+                    model_state
+                        .warnings
+                        .push("managed_models:fetch_models_forbidden".to_string());
+                } else if e.contains("timeout") || e.contains("timed out") {
+                    model_state
+                        .warnings
+                        .push("managed_models:fetch_models_timeout".to_string());
+                } else if e.contains("Request failed") || e.contains("error sending request") {
+                    model_state
+                        .warnings
+                        .push("managed_models:fetch_models_network".to_string());
+                } else {
+                    model_state
+                        .warnings
+                        .push("managed_models:fetch_models_failed".to_string());
+                }
+                if !configured.is_empty() {
+                    model_state.options = configured;
+                }
+            }
         }
     } else if !configured.is_empty() {
         model_state.options = configured;

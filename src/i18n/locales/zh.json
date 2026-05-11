@@ -3,6 +3,19 @@
     "title": "NexusKey",
     "description": "Claude Code / Codex / Gemini CLI 全方位辅助工具"
   },
+  "managedMode": {
+    "credentialsDialog": {
+      "title": "请填写账户信息",
+      "description": "用量查询等功能需要用户 ID 与系统访问令牌。请填写两项后保存；未完成前无法关闭此窗口。",
+      "userId": "用户 ID",
+      "accessToken": "系统访问令牌",
+      "userIdPlaceholder": "必填",
+      "accessTokenPlaceholder": "必填",
+      "bothRequired": "请同时填写用户 ID 和系统访问令牌。",
+      "saved": "已保存",
+      "saveFailed": "保存失败：{{error}}"
+    }
+  },
   "common": {
     "add": "添加",
     "edit": "编辑",
@@ -913,7 +926,8 @@
     "fetchModelsAuthFailed": "API Key 无效或无权限",
     "fetchModelsNotSupported": "该供应商不支持获取模型列表",
     "fetchModelsEndpointNotFound": "未找到可用的模型列表端点，请检查 Base URL 或确认供应商是否开放该接口",
-    "fetchModelsTimeout": "请求超时，请检查网络连接"
+    "fetchModelsTimeout": "请求超时，请检查网络连接",
+    "fetchModelsNetworkErrorContact": "网络连接异常，请检查网络/代理设置后重试。如仍无法连接，请联系客服 QQ:1104213556"
   },
   "copilot": {
     "authSection": "GitHub Copilot 认证",

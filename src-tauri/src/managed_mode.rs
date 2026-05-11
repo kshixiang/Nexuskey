@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+// Keep it ON so managed providers are seeded and visible.
 pub const MANAGED_MODE: bool = true;
 
 pub const MANAGED_BRAND_NAME: &str = "NexusKey";

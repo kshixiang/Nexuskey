@@ -10,6 +10,7 @@ export interface ManagedModelState {
   providerId: string;
   selectedModel?: string;
   options: ManagedModelOption[];
+  warnings?: string[];
 }
 
 export const managedModelsApi = {
